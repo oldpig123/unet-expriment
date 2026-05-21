@@ -42,48 +42,71 @@ def verify_gpu():
     print("=" * 60 + "\n")
     return device
 
-def compute_distance_map_pytorch(mask):
+def compute_distance_map_pytorch(mask, downsample_res=128):
     """
     Vectorized, GPU-compatible Euclidean Distance Transform (EDT) approximation in PyTorch.
     Computes the distance from each pixel to the nearest boundary/edge pixel.
+    To avoid O(N*H*W) overhead on large resolutions, we perform computation on a downsampled
+    grid (e.g. 128x128) and interpolate back to original size.
     """
-    B, _, H, W = mask.shape
+    B, C, H, W = mask.shape
     device = mask.device
     
+    # If the mask is already small or equal to downsample resolution, do not downsample
+    down_h = min(H, downsample_res)
+    down_w = min(W, downsample_res)
+    
+    if H != down_h or W != down_w:
+        mask_down = F.interpolate(mask.float(), size=(down_h, down_w), mode='bilinear', align_corners=False) > 0.2
+    else:
+        mask_down = mask
+        
     # Create spatial coordinate grids
     grid_y, grid_x = torch.meshgrid(
-        torch.arange(H, dtype=torch.float32, device=device),
-        torch.arange(W, dtype=torch.float32, device=device),
+        torch.arange(down_h, dtype=torch.float32, device=device),
+        torch.arange(down_w, dtype=torch.float32, device=device),
         indexing='ij'
-    ) # (H, W) each
+    ) # (down_h, down_w) each
     
     dist_maps = []
     for b in range(B):
-        edge_indices = torch.nonzero(mask[b, 0]) # (N, 2)
+        edge_indices = torch.nonzero(mask_down[b, 0]) # (N, 2)
         if len(edge_indices) == 0:
             # If no edge pixels, return maximum possible distance map
-            max_dist = math.sqrt(H**2 + W**2)
-            dist_maps.append(torch.full((1, H, W), max_dist, device=device))
+            max_dist = math.sqrt(down_h**2 + down_w**2)
+            dist_maps.append(torch.full((1, down_h, down_w), max_dist, device=device))
             continue
             
         ey = edge_indices[:, 0].float() # (N,)
         ex = edge_indices[:, 1].float() # (N,)
         
-        min_dist_sq = torch.full((H, W), float('inf'), device=device)
-        # Process in chunks of edge pixels to avoid GPU memory overflow (O(N*H*W))
-        chunk_size = 256
+        min_dist_sq = torch.full((down_h, down_w), float('inf'), device=device)
+        # Larger chunk size can be used due to smaller spatial resolution
+        chunk_size = 512
         for i in range(0, len(ey), chunk_size):
             ey_chunk = ey[i:i+chunk_size].view(-1, 1, 1) # (C, 1, 1)
             ex_chunk = ex[i:i+chunk_size].view(-1, 1, 1) # (C, 1, 1)
             
-            # Squared Euclidean Distance from grid to all chunk edge pixels: (C, H, W)
+            # Squared Euclidean Distance from grid to all chunk edge pixels: (C, down_h, down_w)
             dist_sq = (grid_y.unsqueeze(0) - ey_chunk)**2 + (grid_x.unsqueeze(0) - ex_chunk)**2
-            chunk_min, _ = torch.min(dist_sq, dim=0) # (H, W)
+            chunk_min, _ = torch.min(dist_sq, dim=0) # (down_h, down_w)
             min_dist_sq = torch.minimum(min_dist_sq, chunk_min)
             
-        dist_maps.append(torch.sqrt(min_dist_sq).unsqueeze(0))
+        # Convert squared distance to actual distance
+        dist_map = torch.sqrt(min_dist_sq).unsqueeze(0)
         
-    return torch.stack(dist_maps, dim=0) # (B, 1, H, W)
+        # Scale distance values back to match the original image coordinates scale
+        if H != down_h:
+            dist_map = dist_map * (H / down_h)
+            
+        dist_maps.append(dist_map)
+        
+    dist_maps_tensor = torch.stack(dist_maps, dim=0) # (B, 1, down_h, down_w)
+    
+    if H != down_h or W != down_w:
+        dist_maps_tensor = F.interpolate(dist_maps_tensor, size=(H, W), mode='bilinear', align_corners=False)
+        
+    return dist_maps_tensor
 
 def extract_edges_and_distances(targets, images):
     """
