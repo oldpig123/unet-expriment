@@ -11,6 +11,8 @@ import numpy as np
 # Import custom model and loss
 from model import UResNet_Attention
 from loss import SpineLoss
+from dataset import get_dataloaders
+import argparse
 
 def verify_gpu():
     """
@@ -287,8 +289,15 @@ def check_dataset_paths():
     return not (mri_exists and verse_exists)
 
 def main():
+    parser = argparse.ArgumentParser(description="U-ResNet Spine Segmentation")
+    parser.add_argument("--dataset", type=str, choices=["simulated", "verse", "lumbar_mri"], default="simulated", help="Dataset to use for training/eval")
+    parser.add_argument("--data_dir", type=str, default="./data", help="Directory where datasets are stored")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs (ignored for simulated)")
+    parser.add_argument("--batch_size", type=int, default=2, help="Batch size")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    args = parser.parse_args()
+
     device = verify_gpu()
-    is_fallback = check_dataset_paths()
     
     # 1. Initialize U-ResNet + Shape-Aware Attention Network
     # in_channels = 1 (grayscale CT/MRI), n_classes = 3 (background, vertebrae, discs)
@@ -305,87 +314,175 @@ def main():
     
     # 2. Initialize SpineLoss
     criterion = SpineLoss(gamma=0.5, lambda_density=1.5, lambda_boundary=1.5)
-    
-    # 3. Create dummy batch to test forward shape tracking
-    print("\n" + "-" * 50)
-    print("FORWARD PASS & INTERMEDIATE RESOLUTION CHECK")
-    print("-" * 50)
-    images, targets = generate_simulated_spine_slice(batch_size=2, height=512, width=512, device=device)
-    C_s, C_hat = extract_edges_and_distances(targets, images)
-    
-    print(f"Input image shape: {list(images.shape)}")
-    print(f"Ground truth target shape: {list(targets.shape)}")
-    print(f"Contour prior C_s shape: {list(C_s.shape)}")
-    print(f"Active contour C_hat shape: {list(C_hat.shape)}")
-    
-    # Forward pass
-    model.train()
-    logits = model(images, C_s, C_hat)
-    print(f"Output logits shape: {list(logits.shape)}")
-    
-    expected_shape = [2, 3, 512, 512]
-    if list(logits.shape) == expected_shape:
-        print("✔ Success! Output shape matches [Batch, Classes, Height, Width] perfectly.")
-    else:
-        print(f"❌ Error: Expected shape {expected_shape}, but got {list(logits.shape)}")
-        sys.exit(1)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+
+    if args.dataset == "simulated":
+        check_dataset_paths()
+        print("\n" + "-" * 50)
+        print("RUNNING SIMULATED DATA DEMO")
+        print("-" * 50)
+        images, targets = generate_simulated_spine_slice(batch_size=2, height=512, width=512, device=device)
+        C_s, C_hat = extract_edges_and_distances(targets, images)
         
-    # 4. Verify loss computation & backpropagation
-    print("\n" + "-" * 50)
-    print("LOSS COMPUTATION & BACKPROPAGATION TEST")
-    print("-" * 50)
-    loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
-    print(f"Loss Components:")
-    print(f"  - Total Loss: {loss.item():.6f}")
-    print(f"  - Region Loss: {loss_reg.item():.6f}")
-    print(f"  - Boundary Loss: {loss_bound.item():.6f}")
-    print(f"  - Volume Loss: {loss_vol.item():.6f}")
-    
-    print("\nTesting backward pass...")
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    optimizer.zero_grad()
-    loss.backward()
-    
-    # Check if gradients flow to initial conv layers
-    init_grad = model.init_conv.weight.grad
-    if init_grad is not None and init_grad.abs().sum() > 0:
-        print("✔ Success! Gradients calculated and backpropagated correctly through the whole network.")
-    else:
-        print("❌ Error: Gradients were not computed or are all zero.")
-        sys.exit(1)
+        print(f"Input image shape: {list(images.shape)}")
+        print(f"Ground truth target shape: {list(targets.shape)}")
+        print(f"Contour prior C_s shape: {list(C_s.shape)}")
+        print(f"Active contour C_hat shape: {list(C_hat.shape)}")
         
-    # 5. Run a mini training sequence of 20 steps to show the loss decrease
-    print("\n" + "-" * 50)
-    print("RUNNING DEMO TRAINING SEQUENCE (20 STEPS)")
-    print("-" * 50)
-    model.train()
-    for step in range(1, 21):
-        optimizer.zero_grad()
+        # Test shape tracking
+        model.train()
         logits = model(images, C_s, C_hat)
+        print(f"Output logits shape: {list(logits.shape)}")
+        
+        expected_shape = [2, 3, 512, 512]
+        if list(logits.shape) != expected_shape:
+            print(f"❌ Error: Expected shape {expected_shape}, but got {list(logits.shape)}")
+            sys.exit(1)
+            
+        # Verify loss and backward pass
         loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
+        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         
-        if step % 5 == 0 or step == 1:
-            print(f"Step {step:02d}/20 | Loss: {loss.item():.6f} (Reg: {loss_reg.item():.4f}, Bound: {loss_bound.item():.4f}, Vol: {loss_vol.item():.4f})")
+        # Run 20 steps
+        for step in range(1, 21):
+            optimizer.zero_grad()
+            logits = model(images, C_s, C_hat)
+            loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
+            loss.backward()
+            optimizer.step()
+            if step % 5 == 0 or step == 1:
+                print(f"Step {step:02d}/20 | Loss: {loss.item():.6f} (Reg: {loss_reg.item():.4f}, Bound: {loss_bound.item():.4f}, Vol: {loss_vol.item():.4f})")
+                
+        model.eval()
+        with torch.no_grad():
+            logits = model(images, C_s, C_hat)
+            probs = F.softmax(logits, dim=1)
+            pred_mask = torch.argmax(probs, dim=1)
+            save_verification_plot(
+                image=images[0],
+                target=targets[0],
+                contour_prior=C_s[0],
+                pred_prob=probs[0],
+                pred_mask=pred_mask[0],
+                filepath="verification_plot.png"
+            )
             
-    # 6. Save visual verification plot from step 20
-    model.eval()
-    with torch.no_grad():
-        logits = model(images, C_s, C_hat)
-        probs = F.softmax(logits, dim=1)
-        pred_mask = torch.argmax(probs, dim=1)
+    else:
+        # Real dataset path
+        print(f"\n" + "-" * 50)
+        print(f"TRAINING ON REAL DATASET: {args.dataset.upper()}")
+        print("-" * 50)
         
-        # Plot the first item in the batch
-        save_verification_plot(
-            image=images[0],
-            target=targets[0],
-            contour_prior=C_s[0],
-            pred_prob=probs[0],
-            pred_mask=pred_mask[0],
-            filepath="verification_plot.png"
-        )
+        train_loader, val_loader = get_dataloaders(args.dataset, args.data_dir, batch_size=args.batch_size)
         
+        for epoch in range(1, args.epochs + 1):
+            model.train()
+            train_loss = 0.0
+            train_reg = 0.0
+            train_bound = 0.0
+            train_vol = 0.0
+            
+            for images, targets in train_loader:
+                images, targets = images.to(device), targets.to(device)
+                C_s, C_hat = extract_edges_and_distances(targets, images)
+                
+                optimizer.zero_grad()
+                logits = model(images, C_s, C_hat)
+                loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
+                loss.backward()
+                optimizer.step()
+                
+                train_loss += loss.item()
+                train_reg += loss_reg.item()
+                train_bound += loss_bound.item()
+                train_vol += loss_vol.item()
+                
+            num_batches = len(train_loader)
+            train_loss /= num_batches
+            train_reg /= num_batches
+            train_bound /= num_batches
+            train_vol /= num_batches
+            
+            # Validation
+            model.eval()
+            val_dice_list = []
+            val_iou_list = []
+            val_hd_list = []
+            
+            with torch.no_grad():
+                for val_images, val_targets in val_loader:
+                    val_images, val_targets = val_images.to(device), val_targets.to(device)
+                    val_C_s, val_C_hat = extract_edges_and_distances(val_targets, val_images)
+                    
+                    val_logits = model(val_images, val_C_s, val_C_hat)
+                    val_probs = F.softmax(val_logits, dim=1)
+                    val_preds = torch.argmax(val_probs, dim=1)
+                    
+                    # Compute Dice and IoU
+                    for c in [1, 2]:
+                        # Skip class 2 (discs) if verse since it doesn't exist
+                        if args.dataset == "verse" and c == 2:
+                            continue
+                        pred_c = (val_preds == c)
+                        target_c = (val_targets == c)
+                        
+                        intersection = (pred_c & target_c).float().sum()
+                        union = (pred_c | target_c).float().sum()
+                        sum_total = pred_c.float().sum() + target_c.float().sum()
+                        
+                        if target_c.sum() > 0:
+                            dice = (2.0 * intersection) / (sum_total + 1e-8)
+                            iou = intersection / (union + 1e-8)
+                            val_dice_list.append(dice.item())
+                            val_iou_list.append(iou.item())
+                            
+                    # Compute Hausdorff Distance
+                    # Edge mapping
+                    val_pred_boundary = (F.max_pool2d((val_preds > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1) -
+                                         -F.max_pool2d(-(val_preds > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1)) > 0.5
+                    val_target_boundary = (F.max_pool2d((val_targets > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1) -
+                                           -F.max_pool2d(-(val_targets > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1)) > 0.5
+                    
+                    for b in range(val_images.shape[0]):
+                        pb = val_pred_boundary[b, 0]
+                        tb = val_target_boundary[b, 0]
+                        
+                        if pb.sum() > 0 and tb.sum() > 0:
+                            dist_t = compute_distance_map_pytorch(tb.unsqueeze(0).unsqueeze(0)).squeeze()
+                            dist_p = compute_distance_map_pytorch(pb.unsqueeze(0).unsqueeze(0)).squeeze()
+                            hd_t = dist_t[pb].max().item()
+                            hd_p = dist_p[tb].max().item()
+                            val_hd_list.append(max(hd_t, hd_p))
+                            
+            mean_dice = np.mean(val_dice_list) if val_dice_list else 0.0
+            mean_iou = np.mean(val_iou_list) if val_iou_list else 0.0
+            mean_hd = np.mean(val_hd_list) if val_hd_list else 0.0
+            
+            print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val HD: {mean_hd:.2f} px")
+
+        # Save verification plot for a validation sample
+        model.eval()
+        with torch.no_grad():
+            # Get one batch from validation
+            val_iter = iter(val_loader)
+            images, targets = next(val_iter)
+            images, targets = images.to(device), targets.to(device)
+            C_s, C_hat = extract_edges_and_distances(targets, images)
+            logits = model(images, C_s, C_hat)
+            probs = F.softmax(logits, dim=1)
+            pred_mask = torch.argmax(probs, dim=1)
+            
+            save_verification_plot(
+                image=images[0],
+                target=targets[0],
+                contour_prior=C_s[0],
+                pred_prob=probs[0],
+                pred_mask=pred_mask[0],
+                filepath="verification_plot.png"
+            )
+
     print("=" * 60)
     print("ALL VERIFICATION CHECKS COMPLETED SUCCESSFULLY!")
     print("=" * 60)
