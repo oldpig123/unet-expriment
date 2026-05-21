@@ -378,6 +378,19 @@ wheels = [
 ]
 
 [[package]]
+name = "nibabel"
+version = "5.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/01/3d2cc510c616bc8e27be17a063070d9126f69407961594a9ae734ea51121/nibabel-5.4.2.tar.gz", hash = "sha256:d5f4b9076a13178ae7f7acf18c8dbd503ee1c4d5c0c23b85df7be87efcbb49da", size = 4663132, upload-time = "2026-03-11T13:31:52.42Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/d7/601b6396b33536811668935faa790112266c70661be94555999be431f86f/nibabel-5.4.2-py3-none-any.whl", hash = "sha256:553482c5f1e1034fc312edf6fb7f32236c0056439845d1c29293b7e8c98d4854", size = 3300985, upload-time = "2026-03-11T13:31:50.028Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -647,6 +660,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pydicom"
+version = "3.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/de/52aaf905f1f0ae7aba85996e2592ea2c1fe49157f3cfbcd1871965bdb51d/pydicom-3.0.2.tar.gz", hash = "sha256:5942bfc2d72c6fa4b3b5b62c527f54b7f2355f21d6f5d296df6bb30188df6a4f", size = 2886792, upload-time = "2026-03-19T21:46:20.935Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/e0/60466c6d712dad2cf807df315e39863e91609ffd1064ecb835994460bbda/pydicom-3.0.2-py3-none-any.whl", hash = "sha256:abf971a5440f84dbaf42c4b6758e30e62480902584f8b270b9a5d146e278a07b", size = 2376822, upload-time = "2026-03-19T21:46:19.042Z" },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
@@ -795,6 +817,8 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "matplotlib" },
+    { name = "nibabel" },
+    { name = "pydicom" },
     { name = "torch" },
     { name = "torchvision" },
 ]
@@ -802,6 +826,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.8.0" },
+    { name = "nibabel", specifier = ">=5.2.1" },
+    { name = "pydicom", specifier = ">=2.4.4" },
     { name = "torch", specifier = ">=2.12.0" },
     { name = "torchvision", specifier = ">=0.27.0" },
 ]

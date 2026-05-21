@@ -9,5 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
+# dataset
+data/*
+
 # backup files
 *.bak_*
