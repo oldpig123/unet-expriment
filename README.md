@@ -1,115 +1,130 @@
-# PyTorch U-Net Semantic Segmentation Experiment
+# Spinal Disease Image Segmentation integrating U-ResNet and Shape-Aware Attention
 
-This repository contains a modular, parameterizable, and GPU-optimized implementation of the **U-Net** architecture in PyTorch, designed to run on high-performance dual Quadro RTX 8000 systems.
+This repository contains a modular, parameterizable, and GPU-optimized PyTorch implementation reproducing the advanced spinal segmentation framework described in the paper:
+**"Spinal disease image segmentation technology integrating U-ResNet and shape-aware attention"** (Scientific Reports, March 2026).
+
+It is optimized for high-performance deep learning systems featuring dual **Quadro RTX 8000** GPUs.
 
 ---
 
-## 1. What is U-Net?
+## 1. Network Architecture Overview
 
-**U-Net** was introduced by Olaf Ronneberger et al. in 2015 for Biomedical Image Segmentation. It has since become a cornerstone architecture for semantic segmentation, image-to-image translation, and even generative models (like the denoising U-Net in Stable Diffusion).
-
-Its architecture is characterized by a symmetric "U" shape consisting of:
-1. **An Encoder (Contracting Path):** Reduces spatial resolution to capture global context (semantic features).
-2. **A Decoder (Expanding Path):** Restores spatial resolution to allow precise object localization.
-3. **Skip Connections:** Connects corresponding levels of the encoder and decoder to preserve high-resolution spatial details.
-
-### U-Net Spatial Structure
+The network is an end-to-end medical image segmentation pipeline. It extends the traditional symmetric U-Net architecture with residual layers, dynamic receptive fields, modality-adaptive normalization, adaptive skip connections, and shape-aware attention.
 
 ```text
-Input Image (C=3, H=256, W=256)                                       Output Mask (C=2, H=256, W=256)
-        │                                                                     ▲
-        ▼                                                                     │
-   [Level 1 Encoder] ───(64 channels skip connection)───► [Level 1 Decoder] ──┘
-        │ MaxPool2d(2x2)                                      ▲ UpConv/Upsample
-        ▼                                                     │
-   [Level 2 Encoder] ───(128 channels skip connection)──► [Level 2 Decoder]
-        │ MaxPool2d(2x2)                                      ▲ UpConv/Upsample
-        ▼                                                     │
-   [Level 3 Encoder] ───(256 channels skip connection)──► [Level 3 Decoder]
-        │ MaxPool2d(2x2)                                      ▲ UpConv/Upsample
-        ▼                                                     │
-   [Level 4 Encoder] ───(512 channels skip connection)──► [Level 4 Decoder]
-        │ MaxPool2d(2x2)                                      ▲ UpConv/Upsample
-        ▼                                                     │
-        └─────────────────► [Level 5: Bottleneck] ────────────┘
-                            (1024 channels)
+Input Spinal Slice (CT/MRI)
+        │
+        ▼
+   [Initial Conv] 
+        │
+   [Encoder Stage 1] ───(Adaptive Skip Connection)───► [Decoder Stage 4] ──► [Out Conv] ──► Predicted Mask
+        │ MaxPool2d                                         ▲ 
+   [Encoder Stage 2] ───(Adaptive Skip Connection)───► [Decoder Stage 3]
+        │ MaxPool2d                                         ▲ 
+   [Encoder Stage 3] ───(Adaptive Skip Connection)───► [Decoder Stage 2]
+        │ MaxPool2d                                         ▲ 
+   [Encoder Stage 4] ────────────────────────────────► [Decoder Stage 1]
+    (Bottleneck)
 ```
 
 ---
 
-## 2. Module Implementations in `unet.py`
+## 2. Key Modules & Formulations
 
-The architecture is implemented in a clean, object-oriented style inside [unet.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/unet.py):
+All modules are implemented in [model.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/model.py):
 
-*   **`DoubleConv`:** 
-    *   Applies a sequence of `[Conv2d -> BatchNorm2d -> ReLU -> Conv2d -> BatchNorm2d -> ReLU]`.
-    *   *Note:* The original paper did not include Batch Normalization (which wasn't popular in 2015). We have added it here to stabilize training and accelerate convergence.
-    *   *Padding:* We use `padding=1` to ensure that spatial dimensions do not shrink after convolutions. This avoids the need for center-cropping in the skip connections.
-*   **`Down`:**
-    *   Applies `MaxPool2d(kernel_size=2, stride=2)` to halve the height and width, followed by the `DoubleConv` block to increase the number of channels.
-*   **`Up`:**
-    *   Upsamples the feature map (doubling spatial dimensions) using either a learnable `ConvTranspose2d` or bilinear `Upsample` interpolation.
-    *   Concatenates the upsampled feature map with the high-resolution feature map from the encoder along the channel dimension (`dim=1`).
-    *   Applies `DoubleConv` on the merged representation.
-*   **`OutConv`:**
-    *   A final 1x1 convolution mapping the $64$-channel feature representation to the target number of output classes.
+### A. U-ResNet Residual Block with Gradient Smoothing
+To address gradient instability in low-contrast boundaries (a common issue in spinal images), we integrate a local spatial gradient smoothing term into the residual block:
+$$F(x) = F_0(x) + \lambda \cdot \nabla F_0(x)$$
+$$H(x) = F(x) + \text{shortcut}(x)$$
+
+Where:
+*   $F_0(x)$ is the output of the second convolution block.
+*   $\lambda$ is a learnable parameter initialized to $0.1$.
+*   $\nabla F_0(x)$ is the spatial gradient magnitude computed via central differences.
+
+### B. Modality-Adaptive Normalization (MAN)
+To handle intensity differences across CT and MRI scans, MAN standardizes feature maps over spatial dimensions channel-by-channel:
+$$F_{\text{norm}}(s) = \frac{F(s) - \mu}{\sigma}$$
+This is implemented using PyTorch's `InstanceNorm2d` with learnable affine parameters, helping align features across multiple imaging modalities.
+
+### C. Dynamic Receptive Field Convolution (DRF Conv)
+We implement Selective Kernel (SK) Convolutions inside the deep stages of the network. This dynamically weights feature maps from convolutions of different kernel and dilation sizes ($3 \times 3$ standard and $3 \times 3$ dilated with $\text{dilation}=2$) using channel-wise squeeze-and-excitation:
+$$V = a \cdot F_{\text{std}} + b \cdot F_{\text{dilated}}$$
+This allows the network to automatically adapt to varying sizes of vertebrae and intervertebral discs.
+
+### D. Adaptive Skip Connections (ASC)
+Traditional U-Net concatenates shallow features directly. ASC instead uses spatial-gated fusion:
+$$F_{\text{fused}}(s) = \alpha(s) \cdot F_{\text{shallow}}(s) + (1 - \alpha(s)) \cdot F_{\text{deep}}(s)$$
+Where $\alpha(s) \in [0, 1]$ is a spatial weight map generated by feeding concatenated features into a $3 \times 3$ convolution layer followed by a Sigmoid function.
+
+### E. Shape-Aware Attention Module (SAAM)
+SAAM merges semantic features $S(s)$ with contour priors $C(s)$ and active contours $\hat{C}(s)$:
+1.  **Shape Consistency:** Measures the alignment of prior shapes and semantic maps:
+    $$\text{Corr}(s) = S(s) \cdot C(s)$$
+2.  **Initial Attention Weights:**
+    $$A_0(s) = \text{Softmax}(\text{Corr}(s))$$
+3.  **Dynamic Shape Adaptation Factor:** Adjusts focus based on actual contour deviation (to handle pathological shape changes like herniated discs or fractures):
+    $$\beta(s) = 1 - \frac{|C(s) - \hat{C}(s)|}{|C(s)| + |\hat{C}(s)| + \epsilon}$$
+4.  **Final Spatial Attention weight:**
+    $$A(s) = \beta(s) \cdot A_0(s) + (1 - \beta(s)) \cdot \text{MeanPool}(A_0(s))$$
+5.  **Optimized Feature Representation:** Fuses the original features with a Gaussian smoothed copy to suppress background noise:
+    $$F'(s) = F(s) \cdot A(s) + \text{GaussianBlur}(F(s) \cdot (1 - A(s)))$$
 
 ---
 
-## 3. Hardware Architecture & Multi-GPU Capabilities
+## 3. Dynamically Weighted combined Loss (SpineLoss)
 
-This project is optimized to run on high-performance deep learning systems:
-*   **Dual Quadro RTX 8000 GPUs:** The system detects and utilizes two identical GPUs, each featuring **48 GB of GDDR6 VRAM** (96 GB combined).
-*   **Device Allocation:** By default, [main.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/main.py) identifies if CUDA is available, maps execution to `cuda:0`, and runs a complete forward/backward pipeline with synthetic data.
-*   **Parameter Count:** The base U-Net model contains **31,037,698 parameters**, all of which are fully trainable.
+Implemented in [loss.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/loss.py):
+$$L_{\text{final}} = L_{\text{total}} + 0.1 \cdot L_{\text{vol}}$$
+$$L_{\text{total}} = \alpha \cdot L_{\text{region}} + \beta \cdot L_{\text{boundary}}$$
+
+### A. Region Loss ($L_{\text{region}}$)
+Uses density-based weights $w(s)$ to force the model to focus on small target regions (imbalanced classes):
+$$L_{\text{region}} = \frac{1}{|\Omega|} \sum_{s \in \Omega} w(s) \cdot [-G(s) \ln P(s) - (1-G(s)) \ln(1 - P(s))]$$
+Where $w(s) = 1.0 + \lambda_{\text{density}} \cdot G(s) \cdot \exp(-\text{LocalDensity}(G(s)))$.
+
+### B. Boundary Loss ($L_{\text{boundary}}$)
+Prioritizes boundary pixels using a distance weight map $d(s)$ computed by applying a Gaussian blur on the mask boundary:
+$$L_{\text{boundary}} = \frac{1}{|\Omega|} \sum_{s \in \Omega} d(s) \cdot |P(s) - G(s)|$$
+Where $d(s) = 1.0 + \lambda_{\text{boundary}} \cdot \text{GaussianBlur}(\text{Boundary}(G(s)))$.
+
+### C. Dynamic Weight Balancing ($\alpha$ and $\beta$)
+$$\alpha = 1 - \gamma \cdot \frac{\sum G(s)}{|\Omega|}, \quad \beta = 1 - \alpha$$
+This dynamic scaling focuses on regional loss when targets are small, and focuses on boundary loss for large targets with blurry borders.
+
+### D. Volume Loss ($L_{\text{vol}}$)
+Measures the absolute difference in target volumes for 2D slices:
+$$L_{\text{vol}} = \left| \frac{1}{|\Omega|} \sum P(s) - \frac{1}{|\Omega|} \sum G(s) \right|$$
 
 ---
 
-## 4. Local Environment Setup & Execution
+## 4. Run & Verify on GPU
 
-We manage our dependencies cleanly and securely using **`uv`**, an extremely fast Python package manager and resolver.
-
-### Running the Verification Script
-
-1. **Synchronize Dependencies:**
-   First, build and update the local virtual environment by running:
-   ```bash
-   uv sync
-   ```
-   *Note: This command will download and link the correct PyTorch and CUDA libraries to your local `.venv` environment.*
-
-2. **Execute the Code:**
-   To verify that PyTorch, CUDA, and the U-Net model are working correctly on your GPU, execute:
-   ```bash
-   uv run python main.py
-   ```
-
-### Verification Logs
-
-When running `main.py`, you should see output similar to the following:
-```text
-============================================================
-GPU / HARDWARE CHECK
-============================================================
-CUDA Available: True
-Number of CUDA Devices: 2
-  Device 0: Quadro RTX 8000 (47.27 GB VRAM)
-  Device 1: Quadro RTX 8000 (47.26 GB VRAM)
-Using device: cuda:0
-============================================================
-INITIALIZING U-NET FORWARD/BACKWARD TEST
-============================================================
-Creating UNet: 3 input channels -> 2 output classes
-Total Parameters: 31,037,698
-Trainable Parameters: 31,037,698
-
-1. Generating dummy input tensor of shape: (2, 3, 256, 256)
-2. Running forward pass through U-Net...
-   Output tensor shape: [2, 2, 256, 256]
-   ✔ Success! Output shape matches expectations.
-
-3. Testing backward pass (gradient flow)...
-   Computed CrossEntropyLoss: 0.7218
-   ✔ Success! Gradients calculated and backpropagated correctly.
-============================================================
+### Virtual Environment Setup
+Ensure dependencies are clean and local to the project:
+```bash
+uv sync
 ```
+
+### Running Verification Script
+Execute the training verification pipeline:
+```bash
+uv run python main.py
+```
+
+This script will:
+1. Detect CUDA hardware (shows Dual Quadro RTX 8000 setup).
+2. Scan for local datasets under `./data/verse` and `./data/lumbar_mri`. If directories are absent, a warning is printed with download links, and a fallback simulated spine generator is activated.
+3. Test dimensional correctness of the forward pass.
+4. Verify loss calculations and successful backpropagation of gradients.
+5. Run a 20-step training demo showing a steadily decreasing loss.
+6. Generate a visual panel `verification_plot.png` in the workspace root directory.
+
+### Visual Verification
+The generated `verification_plot.png` contains 5 panels:
+- **Input Spinal Slice:** Simulated CT/MRI containing spinal columns and canals with noise.
+- **Ground Truth Mask:** Vertebrae (Blue/Cyan) and Intervertebral discs (Orange/Red).
+- **Contour Prior ($C_s$):** Euclidean distance map of targets boundary.
+- **Predicted Probability Map:** Heatmap showing model predictions.
+- **Predicted Mask:** Class argmax of the model's output channels.
