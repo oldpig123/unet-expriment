@@ -412,8 +412,34 @@ def main():
         epochs_no_improve = 0
         patience = 5
         cosine_scheduler = None
+        start_epoch = 1
         
-        for epoch in range(1, args.epochs + 1):
+        if args.checkpoint_path and os.path.exists(args.checkpoint_path):
+            try:
+                print(f"[Checkpoint] Loading checkpoint from {args.checkpoint_path} to resume training...")
+                checkpoint = torch.load(args.checkpoint_path, map_location=device, weights_only=False)
+                model.load_state_dict(checkpoint['model_state_dict'])
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                start_epoch = checkpoint['epoch'] + 1
+                best_val_dice = checkpoint.get('val_dice', -1.0)
+                print(f"Successfully loaded checkpoint. Resuming from epoch {start_epoch:02d} with best Val Dice: {best_val_dice:.4f}")
+                
+                if start_epoch >= 21:
+                    cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                        optimizer,
+                        T_max=max(1, args.epochs - 20),
+                        eta_min=1e-6
+                    )
+                    # Step the scheduler to catch up to the resumed epoch
+                    for _ in range(21, start_epoch):
+                        cosine_scheduler.step()
+                    print(f"[LR Scheduler] Re-initialized Cosine Annealing scheduler and caught up to epoch {start_epoch:02d}")
+            except Exception as e:
+                print(f"[Warning] Failed to load checkpoint: {e}. Starting training from scratch.")
+                best_val_dice = -1.0
+                start_epoch = 1
+        
+        for epoch in range(start_epoch, args.epochs + 1):
             # Paper's learning rate schedule:
             # - Reduced by 10% every 10 epochs before switching to cosine annealing after epoch 20.
             # - Switch to CosineAnnealingLR for remaining epochs.
