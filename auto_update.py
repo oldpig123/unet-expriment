@@ -8,6 +8,7 @@ import numpy as np
 # 4014932: VerSe '19 training process (GPU 1)
 # 4015137: VerSe '20 sequential bash script runner (GPU 0)
 MONITORED_PIDS = [4014932, 4015137]
+MRI_PID = 4014810
 
 # Paths
 LOG_DIR = "/home/nmlab326/.gemini/antigravity-ide/brain/a8113a7b-dd8a-4176-ba18-eb043fe77afb/.system_generated/tasks"
@@ -20,15 +21,19 @@ LOG_FILES = {
     'v20': os.path.join(LOG_DIR, 'task-3194.log'),
 }
 
-def is_any_pid_running(pids):
-    for pid in pids:
-        try:
-            # os.kill(pid, 0) checks if process exists without sending a signal
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            pass
-    return False
+def is_pid_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+def get_running_status():
+    return {
+        'mri': is_pid_running(MRI_PID),
+        'v19': is_pid_running(4014932),
+        'v20': is_pid_running(4015137)
+    }
 
 def parse_best_metrics(filepath):
     """
@@ -68,7 +73,7 @@ def parse_best_metrics(filepath):
         'hd': hds[best_idx]
     }
 
-def update_readme_table(mri_res, v19_res, v20_res):
+def update_readme_table(mri_res, v19_res, v20_res, running_status):
     if not os.path.exists(README_PATH):
         print(f"[Error] README.md not found at {README_PATH}")
         return
@@ -77,15 +82,23 @@ def update_readme_table(mri_res, v19_res, v20_res):
         content = f.read()
         
     # Format rows
-    def format_row(name, res, ckpt):
+    def format_row(name, res, ckpt, status_key):
+        is_running = running_status.get(status_key, False)
         if res:
-            return f"| **{name}** | {res['epoch']} | {res['dice']:.4f} | {res['iou']:.4f} | {res['hd']:.2f} px | `{ckpt}` | Completed |"
+            status_str = "Running" if is_running else "Completed"
+            return f"| **{name}** | {res['epoch']} | {res['dice']:.4f} | {res['iou']:.4f} | {res['hd']:.2f} px | `{ckpt}` | {status_str} |"
         else:
-            return f"| **{name}** | 50 | *N/A* | *N/A* | *N/A* | `{ckpt}` | Failed/Aborted |"
+            if is_running:
+                return f"| **{name}** | 50 | *In Progress* | *TBD* | *TBD* | `{ckpt}` | Running |"
+            else:
+                # If VerSe 20 is not running yet but MRI was running or just finished
+                if name == "VerSe '20 CT" and not running_status.get('v20', False):
+                    return f"| **{name}** | 50 | *Queued* | *TBD* | *TBD* | `{ckpt}` | Queued |"
+                return f"| **{name}** | 50 | *N/A* | *N/A* | *N/A* | `{ckpt}` | Failed/Aborted |"
 
-    mri_row = format_row("Mendeley Lumbar MRI", mri_res, "best_model_lumbar_mri.pt")
-    v19_row = format_row("VerSe '19 CT", v19_res, "best_model_verse19.pt")
-    v20_row = format_row("VerSe '20 CT", v20_res, "best_model_verse20.pt")
+    mri_row = format_row("Mendeley Lumbar MRI", mri_res, "best_model_lumbar_mri.pt", 'mri')
+    v19_row = format_row("VerSe '19 CT", v19_res, "best_model_verse19.pt", 'v19')
+    v20_row = format_row("VerSe '20 CT", v20_res, "best_model_verse20.pt", 'v20')
     
     # Generate the table content
     table_pattern = re.compile(
@@ -99,33 +112,59 @@ def update_readme_table(mri_res, v19_res, v20_res):
         updated_content = table_pattern.sub(r"\1" + new_rows + r"\3", content)
         with open(README_PATH, 'w') as f:
             f.write(updated_content)
-        print("[Info] Successfully updated Quantitative Evaluation table in README.md")
+        print("[Info] Table updated in README memory")
     else:
         print("[Error] Could not find matching table pattern in README.md")
 
+def has_changes_to_commit():
+    target_files = [
+        "README.md",
+        "mendeley_lumbar_mri_curves.png",
+        "verse_19_ct_curves.png",
+        "verse_20_ct_curves.png",
+        "dataset_comparison_chart.png",
+        "verification_plot_lumbar_mri.png",
+        "verification_plot_verse19.png",
+        "verification_plot_verse20.png"
+    ]
+    # Check if any of these files are modified or untracked
+    res = subprocess.run(
+        ["git", "status", "--porcelain"] + target_files,
+        cwd=WORKSPACE_DIR,
+        capture_output=True,
+        text=True
+    )
+    return len(res.stdout.strip()) > 0
+
 def run_git_push():
+    if not has_changes_to_commit():
+        print("[Info] No metric or README changes detected. Skipping git push.")
+        return
+        
     print("[Info] Staging, committing and pushing results...")
     try:
-        # Run git operations
-        subprocess.run(["git", "add", "README.md", "*.png"], cwd=WORKSPACE_DIR, check=True)
-        commit_msg = "Auto-update: training complete, plots generated and README performance table updated"
+        target_files = [
+            "README.md",
+            "mendeley_lumbar_mri_curves.png",
+            "verse_19_ct_curves.png",
+            "verse_20_ct_curves.png",
+            "dataset_comparison_chart.png",
+            "verification_plot_lumbar_mri.png",
+            "verification_plot_verse19.png",
+            "verification_plot_verse20.png"
+        ]
+        # Only add files that exist
+        existing_files = [f for f in target_files if os.path.exists(os.path.join(WORKSPACE_DIR, f))]
+        
+        subprocess.run(["git", "add"] + existing_files, cwd=WORKSPACE_DIR, check=True)
+        commit_msg = "Live-update: training metrics and plots updated"
         subprocess.run(["git", "commit", "-m", commit_msg], cwd=WORKSPACE_DIR, check=True)
         subprocess.run(["git", "push", "origin", "main"], cwd=WORKSPACE_DIR, check=True)
         print("[Info] Successfully pushed updates to origin main.")
     except Exception as e:
         print(f"[Error] Git push failed: {e}")
 
-def main():
-    print(f"[Info] Starting auto-updater, monitoring PIDs: {MONITORED_PIDS}")
-    
-    # Wait for completion
-    while is_any_pid_running(MONITORED_PIDS):
-        print(f"[Monitor] Process(es) still running. Sleeping for 60 seconds...")
-        time.sleep(60)
-        
-    print("[Monitor] All processes finished! Waiting 5 seconds for filesystem logs to flush...")
-    time.sleep(5)
-    
+def perform_iteration():
     # 1. Run plot_metrics.py
     print("[Info] Generating learning curves and comparison chart...")
     try:
@@ -139,16 +178,35 @@ def main():
     v19_res = parse_best_metrics(LOG_FILES['v19'])
     v20_res = parse_best_metrics(LOG_FILES['v20'])
     
-    print(f"Mendeley MRI: {mri_res}")
-    print(f"VerSe 19: {v19_res}")
-    print(f"VerSe 20: {v20_res}")
+    # 3. Get running statuses
+    running_status = get_running_status()
     
-    # 3. Update README.md
-    update_readme_table(mri_res, v19_res, v20_res)
+    # 4. Update README.md
+    update_readme_table(mri_res, v19_res, v20_res, running_status)
     
-    # 4. Push updates to Github
+    # 5. Push updates to Github
     run_git_push()
+
+def main():
+    print(f"[Info] Starting auto-updater loop, monitoring PIDs: {MONITORED_PIDS}")
     
+    while True:
+        # Run update step
+        perform_iteration()
+        
+        # Check running state
+        v19_active = is_pid_running(4014932)
+        v20_active = is_pid_running(4015137)
+        
+        if not v19_active and not v20_active:
+            print("[Monitor] All processes finished. Running final update...")
+            time.sleep(5)
+            perform_iteration()
+            break
+            
+        print("[Monitor] Processes still running. Sleeping for 300 seconds...")
+        time.sleep(300)
+        
     print("[Info] Auto-update flow finished successfully!")
 
 if __name__ == "__main__":
