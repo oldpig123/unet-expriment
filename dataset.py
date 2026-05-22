@@ -153,26 +153,28 @@ def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
         return train_loader, val_loader
         
     elif dataset_name_lower == "lumbar_mri":
-        # Mendeley dataset: split file list randomly
+        # Mendeley dataset: split by patient ID (filename prefix) to prevent data leakage
         images_dir = os.path.join(data_dir, "lumbar_mri", "images")
         if not os.path.exists(images_dir):
             raise FileNotFoundError(f"Mendeley MRI images directory not found: {images_dir}")
             
         all_files = sorted([f for f in os.listdir(images_dir) if f.endswith(".png")])
-        num_files = len(all_files)
-        
-        if num_files == 0:
+        if len(all_files) == 0:
             raise FileNotFoundError(f"No MRI images found in {images_dir}")
             
+        # Get unique patient IDs from prefix (e.g., 0056 from 0056_D3.png)
+        patient_ids = sorted(list(set([f.split("_")[0] for f in all_files])))
+        num_patients = len(patient_ids)
+        
         np.random.seed(42)
-        indices = np.random.permutation(num_files)
-        split_idx = int(num_files * train_val_split)
+        indices = np.random.permutation(num_patients)
+        split_idx = int(num_patients * train_val_split)
         
-        train_indices = indices[:split_idx]
-        val_indices = indices[split_idx:]
+        train_pids = set([patient_ids[i] for i in indices[:split_idx]])
+        val_pids = set([patient_ids[i] for i in indices[split_idx:]])
         
-        train_files = [all_files[i] for i in train_indices]
-        val_files = [all_files[i] for i in val_indices]
+        train_files = [f for f in all_files if f.split("_")[0] in train_pids]
+        val_files = [f for f in all_files if f.split("_")[0] in val_pids]
         
         train_dataset = LumbarMriDataset(data_dir, file_list=train_files)
         val_dataset = LumbarMriDataset(data_dir, file_list=val_files)
