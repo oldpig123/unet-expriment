@@ -31,7 +31,7 @@ Input Spinal Slice (CT/MRI)
 
 ## 2. Key Modules & Formulations
 
-All modules are implemented in [model.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/model.py):
+All modules are implemented in [model.py](model.py):
 
 ### A. U-ResNet Residual Block with Gradient Smoothing
 To address gradient instability in low-contrast boundaries (a common issue in spinal images), we integrate a local spatial gradient smoothing term into the residual block:
@@ -75,7 +75,7 @@ SAAM merges semantic features $S(s)$ with contour prior $C_s(s)$ and active cont
 
 ## 3. Dynamically Weighted combined Loss (SpineLoss)
 
-Implemented in [loss.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/loss.py):
+Implemented in [loss.py](loss.py):
 $$L_{\text{final}} = L_{\text{total}} + 0.1 \cdot L_{\text{vol}}$$
 $$L_{\text{total}} = \alpha \cdot L_{\text{region}} + \beta \cdot L_{\text{boundary}}$$
 
@@ -101,19 +101,34 @@ $$L_{\text{vol}} = \left| \frac{1}{|\Omega|} \sum P(s) - \frac{1}{|\Omega|} \sum
 
 ## 4. Real Datasets & Dataloader Configuration
 
-The repository implements data loaders for two clinical datasets under [dataset.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/dataset.py):
+The repository implements data loaders for the clinical datasets under [dataset.py](dataset.py). To ensure rapid training and prevent memory bottlenecks, we download, preprocess, and cache the datasets locally as 2D sagittal PNG slices.
 
-### A. VerSe '19 CT Dataset
-*   **Format**: 3D CT volumes in NIfTI format (`.nii.gz` or `.nii`) and corresponding segmentation masks.
-*   **Slicing**: Extracted 2D sagittal slices along the Left-Right axis containing at least 10 annotated vertebrae pixels.
-*   **HU Clipping**: Normalized Hounsfield Units using bone window clipping to `[-500, 1300]`, min-max scaling to `[0, 1]`.
-*   **Label Mapping**: Class 1: Vertebrae (mapped from original vertebra indices), Class 0: Background.
+> [!NOTE]
+> **Alignment with the Paper's Preprocessing & Dimensionality:**
+> Slicing clinical 3D volumes into 2D slices aligns directly with the preprocessing steps described by the authors:
+> - **VerSe CT scans:** The paper states: *"3D volumes sliced into 2D images with 1 mm thickness and cropped to 512 × 512 pixels covering the spinal column."* Our offline preprocessing pipeline (`preprocess_verse.py`) achieves this by resampling scans to `1.0mm` isotropic voxel spacing, slicing along the sagittal plane, and resizing/cropping the slices to `512 × 512`.
+> - **Mendeley Lumbar Spine MRI:** The paper states that sagittal slices are resized to `512 × 512` pixels and min-max normalized to `[0, 1]`.
+> - **Dataset Completeness:** The original Mendeley MRI dataset is ~6.26 GB in its raw 3D DICOM format (which includes unannotated slices and raw scan volumes). The 992 MB zip file we use (`zbf6b4pttk.zip`) is the official pre-extracted 2D PNG dataset containing **all 1,545 annotated sagittal slices** across all 309 patients. It represents the **full annotated dataset** for the 2D segmentation task, not a subset.
+> - **Model Input:** Because the U-ResNet + Shape-Aware Attention model is a 2D network (using 2D convolutions), it processes 2D inputs of shape `(B, 1, 512, 512)`. Slicing offline prevents massive computational and memory bottlenecks during training.
 
-### B. Mendeley Lumbar Spine MRI Dataset
+### A. Dataset Setup & Downloading
+All raw clinical datasets are fetched using the `./download_datasets.sh` script:
+*   **VerSe '19 Spinal CT**: Cloned from OSF project ID `jtfa5` to `data/verse19_raw/`.
+*   **VerSe '20 Spinal CT**: Cloned from OSF project ID `4skx2` to `data/verse20_raw/`.
+*   **Mendeley Lumbar Spine MRI**: The PNG ground truth version (Mendeley dataset ID `zbf6b4pttk` version 2) is downloaded to `data/zbf6b4pttk.zip` and unzipped into `data/lumbar_mri/`.
+
+### B. VerSe CT Preprocessing Pipeline (`preprocess_verse.py`)
+CT volumes vary significantly in slice thickness, voxel sizes, and spatial orientation. To resolve this:
+1.  **Reorientation:** All volumes and segmentations are reoriented to the standard `PIR` (Posterior, Inferior, Right) orientation using `nibabel.orientations` to ensure sagittal slices align perpendicular to Axis 2 (Right-Left axis).
+2.  **Resampling:** Volumes are resampled to a uniform `1.0mm` isotropic voxel spacing using `nibabel.processing.resample_to_output` with cubic interpolation (`order=3`) for CT scans and nearest-neighbor interpolation (`order=0`) for segmentations.
+3.  **HU Normalisation:** Hounsfield Units (HU) are clipped to `[-500, 1300]` (bone window) and scaled to `[0, 1]`.
+4.  **2D Slice Extraction:** 2D slices along Axis 2 are extracted. Slices containing $\ge 10$ vertebrae pixels are mapped to binary label format (Class 0: Background, Class 1: Vertebrae) and saved as 8-bit PNG images under `data/verse19/` and `data/verse20/`.
+
+### C. Mendeley Lumbar Spine MRI Dataset
 *   **Format**: Grayscale T2-weighted sagittal MRI PNG slices paired with ground truth label images.
-*   **Label Mapping**: Class 1: Posterior Element/Vertebrae (original pixel value `100`), Class 2: Intervertebral Discs (original pixel value `50`), Class 0: Background (pixel values `250`, `150`, `200` etc.).
+*   **Label Mapping**: Class 1: Vertebrae (original pixel value `100`), Class 2: Intervertebral Discs (original pixel value `50`), Class 0: Background (pixel values `250`, `150`, `200` etc.).
 
-### C. Downsampled GPU-Accelerated Distance Transform Optimization
+### D. Downsampled GPU-Accelerated Distance Transform Optimization
 Computing the Euclidean Distance Transform (EDT) exactly on GPU at $512 \times 512$ is an $O(N \cdot H \cdot W)$ operation. With dense active contour edge maps, this causes substantial computational bottlenecks. 
 We optimized this by:
 1. Downsampling the binary edge mask to $128 \times 128$ using bilinear interpolation and thresholding.
@@ -126,7 +141,7 @@ This reduces training epoch time by **~90%** with negligible impact on normalize
 ## 5. Training & CLI Reference
 
 ### A. Environment Synchronization
-Ensure python dependencies (`nibabel`, `pydicom`, `matplotlib`, `torch`) are installed locally:
+Ensure Python dependencies (`nibabel`, `pydicom`, `matplotlib`, `scipy`, `torch`) are installed locally:
 ```bash
 uv sync
 ```
@@ -134,8 +149,11 @@ uv sync
 ### B. Run Options
 Start training via `main.py` using CLI arguments:
 ```bash
-# Train on VerSe CT dataset for 5 epochs
-uv run python main.py --dataset verse --epochs 5 --batch_size 2 --lr 1e-4
+# Train on VerSe '19 Spinal CT dataset for 5 epochs
+uv run python main.py --dataset verse19 --epochs 5 --batch_size 2 --lr 1e-4
+
+# Train on VerSe '20 Spinal CT dataset for 5 epochs
+uv run python main.py --dataset verse20 --epochs 5 --batch_size 2 --lr 1e-4
 
 # Train on Mendeley Lumbar Spine MRI dataset for 5 epochs
 uv run python main.py --dataset lumbar_mri --epochs 5 --batch_size 2 --lr 1e-4
@@ -145,7 +163,7 @@ uv run python main.py --dataset simulated
 ```
 
 ### CLI Parameters:
-*   `--dataset`: Choices: `simulated`, `verse`, `lumbar_mri` (default: `simulated`).
+*   `--dataset`: Choices: `simulated`, `verse19`, `verse20`, `lumbar_mri` (default: `simulated`).
 *   `--data_dir`: Root directory of datasets (default: `./data`).
 *   `--epochs`: Number of epochs to train for real datasets (default: `5`).
 *   `--batch_size`: Mini-batch size (default: `2`).
@@ -157,19 +175,39 @@ uv run python main.py --dataset simulated
 
 Training successfully computes and monitors Mean Dice, Intersection over Union (IoU), and Hausdorff Distance (HD) per epoch on validation slices:
 
-### VerSe CT Validation (Epoch 2/2)
-*   **Train Loss**: 0.4396
-*   **Val Dice**: 0.3261
-*   **Val IoU**: 0.2267
-*   **Val HD**: 288.18 px
+### Visual Verification Panel Details
+The verification plot generated at the end of a run (defined by `save_verification_plot` in [main.py](main.py)) displays five side-by-side sub-images illustrating the inputs, intermediate priors, and model predictions:
 
-### Mendeley MRI Validation (Epoch 2/2)
-*   **Train Loss**: 0.4835
-*   **Val Dice**: 0.2854
-*   **Val IoU**: 0.1895
-*   **Val HD**: 299.46 px
+1.  **Input Spinal Slice**: The raw, preprocessed grayscale sagittal slice input to the network (MRI or resampled CT).
+2.  **Ground Truth Mask**: The gold-standard annotation map where **Blue/Cyan** represents the Vertebrae (Class 1) and **Orange/Red** represents the Intervertebral Discs (Class 2).
+3.  **Contour Prior $C_s$**: The boundary distance map computed using the optimized Euclidean Distance Transform (EDT). It maps the spatial distance of each pixel to the nearest target boundary and is color-coded using the `jet` colormap (blue indicates region interior/exterior, red indicates boundary edges). This map is consumed by the **Shape-Aware Attention Module (SAAM)** to constrain attention weights.
+4.  **Predicted Prob Map**: The model's continuous raw probability distribution output for foreground classes (vertebrae and discs combined), visualized using the `hot` colormap (bright yellow/white indicates high confidence, red/black indicates low confidence).
+5.  **Predicted Mask**: The final discrete multi-class segmentation mask generated by taking the `argmax` over the model's channel outputs, using the same color mapping as the ground truth (**Blue/Cyan** for vertebrae, **Orange/Red** for discs).
 
-### Visual Segmentation Panel Output
-After validation completes, `verification_plot.png` is generated showing the segmentation pipeline components side-by-side:
+---
 
-![Spinal Segmentation Verification Panel](/home/nmlab326/.gemini/antigravity-ide/brain/a8113a7b-dd8a-4176-ba18-eb043fe77afb/verification_plot.png)
+### A. Mendeley Lumbar Spine MRI (1 Full Epoch)
+*   **Val Dice**: 0.9312
+*   **Val IoU**: 0.8728
+*   **Val HD**: 21.59 px
+*   **Visual Segmentation Panel Output**:
+
+![Lumbar MRI Verification Panel](./verification_plot_lumbar_mri.png)
+
+### B. VerSe '19 CT (100-step Fast Verification Run)
+*   **Val Dice**: 0.6243
+*   **Val IoU**: 0.4777
+*   **Val HD**: 115.79 px
+*   **Visual Segmentation Panel Output**:
+
+![VerSe 19 Verification Panel](./verification_plot_verse19.png)
+
+### C. VerSe '20 CT (100-step Fast Verification Run)
+*   **Val Dice**: 0.6777
+*   **Val IoU**: 0.5169
+*   **Val HD**: 74.75 px
+*   **Visual Segmentation Panel Output**:
+
+![VerSe 20 Verification Panel](./verification_plot_verse20.png)
+
+

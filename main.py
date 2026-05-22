@@ -237,8 +237,11 @@ def save_verification_plot(image, target, contour_prior, pred_prob, pred_mask, f
     pred_mask_rgb[pred_mask_np == 1] = [0.1, 0.6, 0.9]
     pred_mask_rgb[pred_mask_np == 2] = [0.9, 0.4, 0.1]
     
-    # Probability map of target foreground (sum of classes 1 and 2)
-    pred_prob_fg = pred_prob[1] + pred_prob[2]
+    # Probability map of target foreground (sum of classes 1 and 2 if multi-class, else class 1)
+    if pred_prob.shape[0] > 2:
+        pred_prob_fg = pred_prob[1] + pred_prob[2]
+    else:
+        pred_prob_fg = pred_prob[1]
     pred_prob_np = pred_prob_fg.cpu().numpy()
     
     fig, axes = plt.subplots(1, 5, figsize=(20, 4), facecolor='#121212')
@@ -313,19 +316,22 @@ def check_dataset_paths():
 
 def main():
     parser = argparse.ArgumentParser(description="U-ResNet Spine Segmentation")
-    parser.add_argument("--dataset", type=str, choices=["simulated", "verse", "lumbar_mri"], default="simulated", help="Dataset to use for training/eval")
+    parser.add_argument("--dataset", type=str, choices=["simulated", "verse19", "verse20", "lumbar_mri"], default="simulated", help="Dataset to use for training/eval")
     parser.add_argument("--data_dir", type=str, default="./data", help="Directory where datasets are stored")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs (ignored for simulated)")
     parser.add_argument("--batch_size", type=int, default=2, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
+    parser.add_argument("--plot_path", type=str, default="verification_plot.png", help="Path to save the verification plot")
+    parser.add_argument("--max_steps", type=int, default=None, help="Maximum number of steps per epoch for fast verification")
     args = parser.parse_args()
 
     device = verify_gpu()
     
     # 1. Initialize U-ResNet + Shape-Aware Attention Network
-    # in_channels = 1 (grayscale CT/MRI), n_classes = 3 (background, vertebrae, discs)
-    print("Initializing UResNet_Attention model...")
-    model = UResNet_Attention(in_channels=1, n_classes=3, base_channels=32) # Using base_channels=32 for lightweight testing
+    # in_channels = 1 (grayscale CT/MRI), n_classes = 3 (background, vertebrae, discs) or 2 (background, vertebrae)
+    n_classes = 3 if args.dataset in ["lumbar_mri", "simulated"] else 2
+    print(f"Initializing UResNet_Attention model with {n_classes} classes...")
+    model = UResNet_Attention(in_channels=1, n_classes=n_classes, base_channels=32) # Using base_channels=32 for lightweight testing
     model.to(device)
     
     # Count model parameters
@@ -389,7 +395,7 @@ def main():
                 contour_prior=C_s[0],
                 pred_prob=probs[0],
                 pred_mask=pred_mask[0],
-                filepath="verification_plot.png"
+                filepath=args.plot_path
             )
             
     else:
@@ -407,7 +413,10 @@ def main():
             train_bound = 0.0
             train_vol = 0.0
             
-            for images, targets in train_loader:
+            num_batches = 0
+            for step_idx, (images, targets) in enumerate(train_loader):
+                if args.max_steps is not None and step_idx >= args.max_steps:
+                    break
                 images, targets = images.to(device), targets.to(device)
                 C_s, C_hat = extract_edges_and_distances(targets, images)
                 
@@ -421,12 +430,13 @@ def main():
                 train_reg += loss_reg.item()
                 train_bound += loss_bound.item()
                 train_vol += loss_vol.item()
+                num_batches += 1
                 
-            num_batches = len(train_loader)
-            train_loss /= num_batches
-            train_reg /= num_batches
-            train_bound /= num_batches
-            train_vol /= num_batches
+            if num_batches > 0:
+                train_loss /= num_batches
+                train_reg /= num_batches
+                train_bound /= num_batches
+                train_vol /= num_batches
             
             # Validation
             model.eval()
@@ -435,7 +445,9 @@ def main():
             val_hd_list = []
             
             with torch.no_grad():
-                for val_images, val_targets in val_loader:
+                for val_step_idx, (val_images, val_targets) in enumerate(val_loader):
+                    if args.max_steps is not None and val_step_idx >= max(1, args.max_steps // 4):
+                        break
                     val_images, val_targets = val_images.to(device), val_targets.to(device)
                     val_C_s, val_C_hat = extract_edges_and_distances(val_targets, val_images)
                     
@@ -446,7 +458,7 @@ def main():
                     # Compute Dice and IoU
                     for c in [1, 2]:
                         # Skip class 2 (discs) if verse since it doesn't exist
-                        if args.dataset == "verse" and c == 2:
+                        if args.dataset.startswith("verse") and c == 2:
                             continue
                         pred_c = (val_preds == c)
                         target_c = (val_targets == c)
@@ -503,7 +515,7 @@ def main():
                 contour_prior=C_s[0],
                 pred_prob=probs[0],
                 pred_mask=pred_mask[0],
-                filepath="verification_plot.png"
+                filepath=args.plot_path
             )
 
     print("=" * 60)
