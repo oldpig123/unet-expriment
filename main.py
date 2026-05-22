@@ -413,6 +413,7 @@ def main():
         patience = 5
         cosine_scheduler = None
         start_epoch = 1
+        start_step = 0
         
         if args.checkpoint_path and os.path.exists(args.checkpoint_path):
             try:
@@ -420,9 +421,17 @@ def main():
                 checkpoint = torch.load(args.checkpoint_path, map_location=device, weights_only=False)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                start_epoch = checkpoint['epoch'] + 1
+                
+                saved_step = checkpoint.get('step', -1)
+                if saved_step == -1:
+                    start_epoch = checkpoint['epoch'] + 1
+                    start_step = 0
+                else:
+                    start_epoch = checkpoint['epoch']
+                    start_step = saved_step + 1
+                
                 best_val_dice = checkpoint.get('val_dice', -1.0)
-                print(f"Successfully loaded checkpoint. Resuming from epoch {start_epoch:02d} with best Val Dice: {best_val_dice:.4f}")
+                print(f"Successfully loaded checkpoint. Resuming from epoch {start_epoch:02d}, step {start_step} with best Val Dice: {best_val_dice:.4f}")
                 
                 if start_epoch >= 21:
                     cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -438,6 +447,7 @@ def main():
                 print(f"[Warning] Failed to load checkpoint: {e}. Starting training from scratch.")
                 best_val_dice = -1.0
                 start_epoch = 1
+                start_step = 0
         
         for epoch in range(start_epoch, args.epochs + 1):
             # Paper's learning rate schedule:
@@ -467,6 +477,8 @@ def main():
             
             num_batches = 0
             for step_idx, (images, targets) in enumerate(train_loader):
+                if step_idx < start_step:
+                    continue
                 if args.max_steps is not None and step_idx >= args.max_steps:
                     break
                 images, targets = images.to(device), targets.to(device)
@@ -483,6 +495,18 @@ def main():
                 train_bound += loss_bound.item()
                 train_vol += loss_vol.item()
                 num_batches += 1
+                
+                # Save intermediate checkpoint every 500 steps to protect against server restarts
+                if (step_idx + 1) % 500 == 0:
+                    if args.checkpoint_path:
+                        torch.save({
+                            'epoch': epoch,
+                            'step': step_idx,
+                            'model_state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict(),
+                            'val_dice': best_val_dice
+                        }, args.checkpoint_path)
+                        print(f"[Checkpoint] Saved intermediate checkpoint at Epoch {epoch:02d}, Step {step_idx+1}")
                 
             if num_batches > 0:
                 train_loss /= num_batches
@@ -560,6 +584,7 @@ def main():
                 if args.checkpoint_path:
                     torch.save({
                         'epoch': epoch,
+                        'step': -1,
                         'model_state_dict': model.state_dict(),
                         'optimizer_state_dict': optimizer.state_dict(),
                         'val_dice': best_val_dice,
@@ -573,6 +598,9 @@ def main():
                 if epochs_no_improve >= patience:
                     print(f"[Early Stopping] Validation Dice did not improve for {patience} straight epochs. Stopping training.")
                     break
+            
+            # Reset start_step for the next epoch
+            start_step = 0
 
         # Save verification plot for a validation sample
         model.eval()
