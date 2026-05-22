@@ -78,10 +78,11 @@ def parse_best_metrics(filepath, ckpt_path=None):
                 'hd': hds[best_idx]
             }
 
-    # Compare and return the one with the higher dice score
+    # Compare and return the one with the higher dice score.
+    # Prefer the log result when dice is equal, since it has complete metrics (iou, hd).
     res = None
     if best_ckpt and best_log:
-        if best_ckpt['dice'] >= best_log['dice']:
+        if best_ckpt['dice'] > best_log['dice'] and best_ckpt.get('iou', 0.0) > 0.0:
             res = best_ckpt
         else:
             res = best_log
@@ -90,12 +91,6 @@ def parse_best_metrics(filepath, ckpt_path=None):
     elif best_log:
         res = best_log
 
-    if res and ckpt_path and "verse19" in ckpt_path:
-        if res.get('iou', 0.0) == 0.0 or res.get('hd', 0.0) == 0.0:
-            res['iou'] = 0.7985
-            res['hd'] = 6.19
-            res['dice'] = max(res.get('dice', 0.0), 0.8723)
-            
     return res
 
 
@@ -110,15 +105,17 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
     # Format rows
     def format_row(name, res, ckpt, status_key):
         is_running = running_status.get(status_key, False)
-        if res:
+        is_real_res = res and res.get('dice', -1.0) > 0.0
+        
+        if is_real_res:
             status_str = "Running" if is_running else "Completed"
             return f"| **{name}** | {res['epoch']} | {res['dice']:.4f} | {res['iou']:.4f} | {res['hd']:.2f} px | `{ckpt}` | {status_str} |"
         else:
             if is_running:
                 return f"| **{name}** | 50 | *In Progress* | *TBD* | *TBD* | `{ckpt}` | Running |"
             else:
-                # If VerSe 20 is not running yet but MRI was running or just finished
-                if name == "VerSe '20 CT" and not running_status.get('v20', False):
+                # If VerSe 20 is not running yet but MRI is still running
+                if name == "VerSe '20 CT" and running_status.get('mri', False):
                     return f"| **{name}** | 50 | *Queued* | *TBD* | *TBD* | `{ckpt}` | Queued |"
                 return f"| **{name}** | 50 | *N/A* | *N/A* | *N/A* | `{ckpt}` | Failed/Aborted |"
 

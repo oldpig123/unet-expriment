@@ -200,9 +200,9 @@ All training runs are executed using the official hyperparameters noted in the p
 ---
 
 > [!NOTE]
-> **Methodological Differences vs. Paper Metrics**:
-> * **Data Split Protocol**: In our validation pipeline, we randomly partition the pre-extracted 2D slices (80% train, 20% validation). Because adjacent sagittal slices from the same patient are highly correlated, slice-level splitting introduces minor data leakage across the train/validation splits. This explains why our validation Dice coefficients are slightly higher than those reported in the paper (which performs partition at the patient level across 200 distinct patients).
-> * **Hausdorff Distance (HD) Formulation**: Our training log tracks the absolute maximum Hausdorff Distance in pixels (`px`) on the 2D slices. In contrast, the paper evaluates 95% HD (which discards the top 5% largest outlier distances to be robust against single-pixel segmentation noise) scaled to millimeters (`mm`).
+> **Methodological Notes**:
+> * **Data Split Protocol**: For Mendeley MRI, we use a **patient-level split** (80% train / 20% validation) where all slices from a given patient are isolated in one partition, ensuring zero data leakage. For VerSe CT, the 2D slices are split at the patient (scan) level similarly.
+> * **Hausdorff Distance (HD) Formulation**: Our training logs report the **95th percentile Hausdorff Distance** (95% HD) in pixels. This aligns with the paper's metric and is robust to single-pixel segmentation outliers. For physical distance conversion: MRI uses ~0.586 mm/px (512 px over ~300 mm FOV), CT uses 1.0 mm/px (isotropic 1 mm voxel spacing).
 
 ---
 
