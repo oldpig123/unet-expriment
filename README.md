@@ -194,8 +194,15 @@ All training runs are executed using the official hyperparameters noted in the p
 | Dataset | Epochs | Best Val Dice | Val IoU | Val HD (px) | Checkpoint Path | Status |
 | :--- | :---: | :---: | :---: | :---: | :--- | :---: |
 | **Mendeley Lumbar MRI** | 23 | 0.9611 | 0.9257 | 13.09 px | `best_model_lumbar_mri.pt` | Completed |
-| **VerSe '19 CT** | 1 | 0.8367 | 0.7515 | 41.55 px | `best_model_verse19.pt` | Running |
+| **VerSe '19 CT** | 50 | *In Progress* | *TBD* | *TBD* | `best_model_verse19.pt` | Running |
 | **VerSe '20 CT** | 50 | *In Progress* | *TBD* | *TBD* | `best_model_verse20.pt` | Running |
+
+---
+
+> [!NOTE]
+> **Methodological Differences vs. Paper Metrics**:
+> * **Data Split Protocol**: In our validation pipeline, we randomly partition the pre-extracted 2D slices (80% train, 20% validation). Because adjacent sagittal slices from the same patient are highly correlated, slice-level splitting introduces minor data leakage across the train/validation splits. This explains why our validation Dice coefficients are slightly higher than those reported in the paper (which performs partition at the patient level across 200 distinct patients).
+> * **Hausdorff Distance (HD) Formulation**: Our training log tracks the absolute maximum Hausdorff Distance in pixels (`px`) on the 2D slices. In contrast, the paper evaluates 95% HD (which discards the top 5% largest outlier distances to be robust against single-pixel segmentation noise) scaled to millimeters (`mm`).
 
 ---
 
