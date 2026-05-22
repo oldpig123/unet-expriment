@@ -194,7 +194,7 @@ All training runs are executed using the official hyperparameters noted in the p
 | Dataset | Epochs | Best Val Dice | Val IoU | Val HD (px) | Checkpoint Path | Status |
 | :--- | :---: | :---: | :---: | :---: | :--- | :---: |
 | **Mendeley Lumbar MRI** | 20 | 0.9630 | 0.9294 | 5.47 px | `best_model_lumbar_mri.pt` | Completed |
-| **VerSe '19 CT** | 2 | 0.8691 | 0.7939 | 20.99 px | `best_model_verse19.pt` | Running |
+| **VerSe '19 CT** | 3 | 0.8788 | 0.8110 | 22.36 px | `best_model_verse19.pt` | Running |
 | **VerSe '20 CT** | 50 | *In Progress* | *TBD* | *TBD* | `best_model_verse20.pt` | Running |
 
 ---
