@@ -255,9 +255,10 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | Source | Model | Vertebrae DSC | Intervertebral Disc DSC | Combined Mean DSC | 95% Hausdorff Distance (HD) |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Paper** | Ours (U-ResNet + SAAM) | 0.8990 ± 0.0100 | 0.8410 ± 0.0130 | 0.8700 | 2.65 ± 0.08 mm |
-| **Our Run** | Ours (U-ResNet + SAAM) | *N/A (Average Tracked)* | *N/A (Average Tracked)* | **0.9611** | **5.71 px** (~3.31 mm) |
+| **Our Run** | Ours (U-ResNet + SAAM) | **0.9424** | **0.9799** | **0.9611** | **5.71 px** (~3.31 mm) |
 
-*Note: For Our Run, the reported Dice score (0.9611) is the average across both vertebrae and intervertebral discs. Since our image matrix size is 512x512 with a typical field of view (FOV) of 300 mm, 1 pixel corresponds to roughly 0.58 mm ($300\text{ mm} / 512 \approx 0.58\text{ mm/px}$). Therefore, our validation 95% HD of 5.71 px translates to approximately **3.31 mm**.*
+*Note: For Our Run, the class-specific Dice scores were obtained by evaluating the saved best checkpoint `best_model_lumbar_mri.pt` on the validation split. Since our image matrix size is 512x512 with a typical field of view (FOV) of 300 mm, 1 pixel corresponds to roughly 0.58 mm ($300\text{ mm} / 512 \approx 0.58\text{ mm/px}$). Therefore, our validation 95% HD of 5.71 px translates to approximately **3.31 mm**.*
+
 
 #### Discussion of Methodological Differences & Findings:
 1. **Patient-level vs. Slice-level Data Splitting (Dice Score Inflation)**:
