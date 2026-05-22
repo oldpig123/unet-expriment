@@ -199,6 +199,23 @@ All training runs are executed using the official hyperparameters noted in the p
 
 ---
 
+### Training & Validation Performance Curves
+To visualize optimization dynamics, we track training loss, validation Dice score, Jaccard Index (IoU), and Hausdorff Distance (HD) over the 50-epoch training cycles. These curves are plotted automatically using our log parsing utility (`plot_metrics.py`):
+
+*   **Mendeley Lumbar Spine MRI**:
+    ![Lumbar MRI Learning Curves](./mendeley_lumbar_mri_curves.png)
+*   **VerSe '19 CT**:
+    ![VerSe '19 Learning Curves](./verse_19_ct_curves.png)
+*   **VerSe '20 CT**:
+    ![VerSe '20 Learning Curves](./verse_20_ct_curves.png)
+
+### Overall Model Performance Comparison
+The bar chart below compares the best validation Dice coefficient and Jaccard Index (IoU) on the left axis against the minimum Hausdorff Distance (HD) on the right axis across all three clinical datasets:
+
+![Dataset Performance Comparison](./dataset_comparison_chart.png)
+
+---
+
 ### Visual Verification Panel Details
 The verification plot generated at the end of a run (defined by `save_verification_plot` in [main.py](main.py)) displays five side-by-side sub-images illustrating inputs, intermediate priors, and model predictions:
 
