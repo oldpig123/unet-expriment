@@ -271,6 +271,10 @@ We compare our implementation's best results with the SOTA metrics reported in t
    * Applying the spatial scaling factor of $\approx 0.58\text{ mm/px}$, our distance is approximately $3.31\text{ mm}$, which is closely aligned with the paper's boundary accuracy of $2.65\text{ mm}$, confirming that our shape-aware attention constraints and dynamic boundary loss are optimizing boundaries similarly to the paper's implementation.
 3. **Anatomical Boundary Tracking**:
    * The shape-aware attention module (SAAM) relies on a combination of global contour priors ($C_s$) and local image contours ($C_{\text{hat}}$). The dynamic shape adaptation factor $\beta$ effectively adjusts attention weights when pathological deformations (like herniation or degeneration) are present. This synergy ensures high boundary alignment, keeping the 95% HD under 6 pixels (3.4 mm) even in pathological zones.
+4. **Future Directions (3D Volumetric Segmentation)**:
+   * **Transition to 3D Networks:** While the current implementation processes 2D sagittal slices (matching the paper's default setup), a logical extension is to upgrade the backbone and shape-aware attention modules to 3D (using `Conv3d`, `InstanceNorm3d`, etc.).
+   * **Utilizing Raw Volumetric Data:** This would allow the model to ingest raw 3D DICOM volumes (like the Mendeley `k57fr854j2` dataset) or full 3D NIfTI scans directly. Doing so would capture cross-slice spatial dependencies and coronal/axial context that are missed by a 2D slice-by-slice model, though at the cost of higher GPU VRAM usage.
+
 
 
 
