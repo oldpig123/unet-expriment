@@ -323,6 +323,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--plot_path", type=str, default="verification_plot.png", help="Path to save the verification plot")
     parser.add_argument("--max_steps", type=int, default=None, help="Maximum number of steps per epoch for fast verification")
+    parser.add_argument("--base_channels", type=int, default=32, help="Number of base channels for U-ResNet (default: 32)")
+    parser.add_argument("--checkpoint_path", type=str, default=None, help="Path to save the best model weights checkpoint (e.g. best_model.pt)")
     args = parser.parse_args()
 
     device = verify_gpu()
@@ -331,7 +333,7 @@ def main():
     # in_channels = 1 (grayscale CT/MRI), n_classes = 3 (background, vertebrae, discs) or 2 (background, vertebrae)
     n_classes = 3 if args.dataset in ["lumbar_mri", "simulated"] else 2
     print(f"Initializing UResNet_Attention model with {n_classes} classes...")
-    model = UResNet_Attention(in_channels=1, n_classes=n_classes, base_channels=32) # Using base_channels=32 for lightweight testing
+    model = UResNet_Attention(in_channels=1, n_classes=n_classes, base_channels=args.base_channels)
     model.to(device)
     
     # Count model parameters
@@ -343,7 +345,7 @@ def main():
     
     # 2. Initialize SpineLoss
     criterion = SpineLoss(gamma=0.5, lambda_density=1.5, lambda_boundary=1.5)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
 
     if args.dataset == "simulated":
         check_dataset_paths()
@@ -406,7 +408,31 @@ def main():
         
         train_loader, val_loader = get_dataloaders(args.dataset, args.data_dir, batch_size=args.batch_size)
         
+        best_val_dice = -1.0
+        epochs_no_improve = 0
+        patience = 5
+        cosine_scheduler = None
+        
         for epoch in range(1, args.epochs + 1):
+            # Paper's learning rate schedule:
+            # - Reduced by 10% every 10 epochs before switching to cosine annealing after epoch 20.
+            # - Switch to CosineAnnealingLR for remaining epochs.
+            if epoch <= 20:
+                if epoch == 11:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = args.lr * 0.9
+                    print(f"\n[LR Scheduler] Reduced learning rate by 10% to {args.lr * 0.9:.6f} at epoch {epoch}")
+            elif epoch == 21:
+                cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer,
+                    T_max=max(1, args.epochs - 20),
+                    eta_min=1e-6
+                )
+                print(f"\n[LR Scheduler] Switched to Cosine Annealing scheduler for remaining epochs")
+                
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"\n--- Epoch {epoch:02d}/{args.epochs} | Learning Rate: {current_lr:.6f} ---")
+            
             model.train()
             train_loss = 0.0
             train_reg = 0.0
@@ -496,6 +522,31 @@ def main():
             mean_hd = np.mean(val_hd_list) if val_hd_list else 0.0
             
             print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val HD: {mean_hd:.2f} px")
+            
+            # Step the cosine scheduler if active
+            if cosine_scheduler is not None:
+                cosine_scheduler.step()
+                
+            # Checkpoint & Early Stopping
+            if mean_dice > best_val_dice:
+                best_val_dice = mean_dice
+                epochs_no_improve = 0
+                if args.checkpoint_path:
+                    torch.save({
+                        'epoch': epoch,
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'val_dice': best_val_dice,
+                        'val_iou': mean_iou,
+                        'val_hd': mean_hd
+                    }, args.checkpoint_path)
+                    print(f"[Checkpoint] Saved best model to {args.checkpoint_path} (Val Dice: {best_val_dice:.4f})")
+            else:
+                epochs_no_improve += 1
+                print(f"[Early Stopping] Validation Dice did not improve. Count: {epochs_no_improve}/{patience}")
+                if epochs_no_improve >= patience:
+                    print(f"[Early Stopping] Validation Dice did not improve for {patience} straight epochs. Stopping training.")
+                    break
 
         # Save verification plot for a validation sample
         model.eval()
