@@ -148,8 +148,8 @@ def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
         train_dataset = VerSeDataset(dataset_path, file_list=train_files)
         val_dataset = VerSeDataset(dataset_path, file_list=val_files)
         
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
         return train_loader, val_loader
         
     elif dataset_name_lower == "lumbar_mri":
@@ -177,8 +177,8 @@ def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
         train_dataset = LumbarMriDataset(data_dir, file_list=train_files)
         val_dataset = LumbarMriDataset(data_dir, file_list=val_files)
         
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
         return train_loader, val_loader
         
     else:
