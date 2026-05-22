@@ -3,6 +3,8 @@ import re
 import time
 import subprocess
 import numpy as np
+import torch
+
 
 # Paths
 README_PATH = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/README.md"
@@ -28,43 +30,66 @@ def get_running_status():
         'v20': is_dataset_running('verse20')
     }
 
-def parse_best_metrics(filepath):
+def parse_best_metrics(filepath, ckpt_path=None):
     """
-    Parses a log file and returns the metrics of the epoch with the highest Val Dice.
+    Parses a log file and optionally a checkpoint file, returning the metrics
+    of the epoch with the highest Val Dice.
     """
-    if not os.path.exists(filepath):
-        return None
+    best_ckpt = None
+    if ckpt_path and os.path.exists(ckpt_path):
+        try:
+            checkpoint = torch.load(ckpt_path, map_location='cpu', weights_only=False)
+            if 'epoch' in checkpoint and 'val_dice' in checkpoint:
+                best_ckpt = {
+                    'epoch': checkpoint['epoch'],
+                    'dice': checkpoint['val_dice'],
+                    'iou': checkpoint.get('val_iou', 0.0),
+                    'hd': checkpoint.get('val_hd', 0.0)
+                }
+        except Exception as e:
+            print(f"[Warning] Failed to load checkpoint {ckpt_path} in auto-updater: {e}")
+
+    best_log = None
+    if os.path.exists(filepath):
+        pattern = re.compile(
+            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
+        )
         
-    pattern = re.compile(
-        r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
-    )
-    
-    epochs = []
-    losses = []
-    dices = []
-    ious = []
-    hds = []
-    
-    with open(filepath, 'r') as f:
-        for line in f:
-            match = pattern.search(line)
-            if match:
-                epochs.append(int(match.group(1)))
-                losses.append(float(match.group(2)))
-                dices.append(float(match.group(3)))
-                ious.append(float(match.group(4)))
-                hds.append(float(match.group(5)))
-                
-    if not dices:
-        return None
+        epochs = []
+        dices = []
+        ious = []
+        hds = []
         
-    best_idx = np.argmax(dices)
-    return {
-        'epoch': epochs[best_idx],
-        'dice': dices[best_idx],
-        'iou': ious[best_idx],
-        'hd': hds[best_idx]
-    }
+        with open(filepath, 'r') as f:
+            for line in f:
+                match = pattern.search(line)
+                if match:
+                    epochs.append(int(match.group(1)))
+                    dices.append(float(match.group(3)))
+                    ious.append(float(match.group(4)))
+                    hds.append(float(match.group(5)))
+                    
+        if dices:
+            best_idx = np.argmax(dices)
+            best_log = {
+                'epoch': epochs[best_idx],
+                'dice': dices[best_idx],
+                'iou': ious[best_idx],
+                'hd': hds[best_idx]
+            }
+
+    # Compare and return the one with the higher dice score
+    if best_ckpt and best_log:
+        if best_ckpt['dice'] >= best_log['dice']:
+            return best_ckpt
+        else:
+            return best_log
+    elif best_ckpt:
+        return best_ckpt
+    elif best_log:
+        return best_log
+    else:
+        return None
 
 def update_readme_table(mri_res, v19_res, v20_res, running_status):
     if not os.path.exists(README_PATH):
@@ -167,9 +192,9 @@ def perform_iteration():
         
     # 2. Parse log files
     print("[Info] Parsing log files...")
-    mri_res = parse_best_metrics(LOG_FILES['mri'])
-    v19_res = parse_best_metrics(LOG_FILES['v19'])
-    v20_res = parse_best_metrics(LOG_FILES['v20'])
+    mri_res = parse_best_metrics(LOG_FILES['mri'], os.path.join(WORKSPACE_DIR, 'best_model_lumbar_mri.pt'))
+    v19_res = parse_best_metrics(LOG_FILES['v19'], os.path.join(WORKSPACE_DIR, 'best_model_verse19.pt'))
+    v20_res = parse_best_metrics(LOG_FILES['v20'], os.path.join(WORKSPACE_DIR, 'best_model_verse20.pt'))
     
     # 3. Get running statuses
     running_status = get_running_status()

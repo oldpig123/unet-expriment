@@ -21,18 +21,13 @@ plt.rcParams.update({
 def parse_log_file(filepath):
     """
     Parses training metrics from a log file.
-    Looks for lines like:
-    Epoch 01/50 | Train Loss: 0.180670 | Val Dice: 0.9214 | Val IoU: 0.8561 | Val HD: 30.77 px
+    Keeps only the latest metrics for each epoch to handle resumes.
     """
-    epochs = []
-    losses = []
-    dices = []
-    ious = []
-    hds = []
+    epoch_dict = {}
     
     if not os.path.exists(filepath):
         print(f"[Warning] Log file not found: {filepath}")
-        return epochs, losses, dices, ious, hds
+        return [], [], [], [], []
         
     pattern = re.compile(
         r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
@@ -42,12 +37,19 @@ def parse_log_file(filepath):
         for line in f:
             match = pattern.search(line)
             if match:
-                epochs.append(int(match.group(1)))
-                losses.append(float(match.group(2)))
-                dices.append(float(match.group(3)))
-                ious.append(float(match.group(4)))
-                hds.append(float(match.group(5)))
+                ep = int(match.group(1))
+                loss = float(match.group(2))
+                dice = float(match.group(3))
+                iou = float(match.group(4))
+                hd = float(match.group(5))
+                epoch_dict[ep] = (loss, dice, iou, hd)
                 
+    epochs = sorted(epoch_dict.keys())
+    losses = [epoch_dict[ep][0] for ep in epochs]
+    dices = [epoch_dict[ep][1] for ep in epochs]
+    ious = [epoch_dict[ep][2] for ep in epochs]
+    hds = [epoch_dict[ep][3] for ep in epochs]
+                 
     return epochs, losses, dices, ious, hds
 
 def plot_learning_curves(epochs, losses, dices, ious, hds, title, output_path):
