@@ -4,35 +4,28 @@ import time
 import subprocess
 import numpy as np
 
-# Monitored PIDs
-# 4014932: VerSe '19 training process (GPU 1)
-# 4015137: VerSe '20 sequential bash script runner (GPU 0)
-MONITORED_PIDS = [4014932, 4015137]
-MRI_PID = 4014810
-
 # Paths
-LOG_DIR = "/home/nmlab326/.gemini/antigravity-ide/brain/a8113a7b-dd8a-4176-ba18-eb043fe77afb/.system_generated/tasks"
 README_PATH = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/README.md"
 WORKSPACE_DIR = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet"
 
 LOG_FILES = {
-    'mri': os.path.join(LOG_DIR, 'task-3184.log'),
-    'v19': os.path.join(LOG_DIR, 'task-3188.log'),
-    'v20': os.path.join(LOG_DIR, 'task-3194.log'),
+    'mri': os.path.join(WORKSPACE_DIR, 'mri_train.log'),
+    'v19': os.path.join(WORKSPACE_DIR, 'verse19_train.log'),
+    'v20': os.path.join(WORKSPACE_DIR, 'verse20_train.log'),
 }
 
-def is_pid_running(pid):
+def is_dataset_running(dataset_name):
     try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
+        res = subprocess.run(["pgrep", "-f", f"main.py --dataset {dataset_name}"], capture_output=True, text=True)
+        return len(res.stdout.strip()) > 0
+    except Exception:
         return False
 
 def get_running_status():
     return {
-        'mri': is_pid_running(MRI_PID),
-        'v19': is_pid_running(4014932),
-        'v20': is_pid_running(4015137)
+        'mri': is_dataset_running('lumbar_mri'),
+        'v19': is_dataset_running('verse19'),
+        'v20': is_dataset_running('verse20')
     }
 
 def parse_best_metrics(filepath):
@@ -188,17 +181,18 @@ def perform_iteration():
     run_git_push()
 
 def main():
-    print(f"[Info] Starting auto-updater loop, monitoring PIDs: {MONITORED_PIDS}")
+    print(f"[Info] Starting auto-updater loop, monitoring main.py processes dynamically...")
     
     while True:
         # Run update step
         perform_iteration()
         
         # Check running state
-        v19_active = is_pid_running(4014932)
-        v20_active = is_pid_running(4015137)
+        mri_active = is_dataset_running('lumbar_mri')
+        v19_active = is_dataset_running('verse19')
+        v20_active = is_dataset_running('verse20')
         
-        if not v19_active and not v20_active:
+        if not mri_active and not v19_active and not v20_active:
             print("[Monitor] All processes finished. Running final update...")
             time.sleep(5)
             perform_iteration()

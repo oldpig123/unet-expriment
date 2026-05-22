@@ -162,14 +162,14 @@ def plot_comparison_chart(results, output_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Parse training log files and plot metrics.")
-    parser.add_argument("--log_dir", type=str, default="/home/nmlab326/.gemini/antigravity-ide/brain/a8113a7b-dd8a-4176-ba18-eb043fe77afb/.system_generated/tasks", help="Tasks logs directory")
+    parser.add_argument("--log_dir", type=str, default=".", help="Tasks logs directory")
     args = parser.parse_args()
     
     # Task log filenames
     logs = {
-        'Mendeley Lumbar MRI': os.path.join(args.log_dir, 'task-3184.log'),
-        'VerSe 19 CT': os.path.join(args.log_dir, 'task-3188.log'),
-        'VerSe 20 CT': os.path.join(args.log_dir, 'task-3194.log'),
+        'Mendeley Lumbar MRI': os.path.join(args.log_dir, 'mri_train.log'),
+        'VerSe 19 CT': os.path.join(args.log_dir, 'verse19_train.log'),
+        'VerSe 20 CT': os.path.join(args.log_dir, 'verse20_train.log'),
     }
     
     results = {}

@@ -513,8 +513,8 @@ def main():
                         if pb.sum() > 0 and tb.sum() > 0:
                             dist_t = compute_distance_map_pytorch(tb.unsqueeze(0).unsqueeze(0)).squeeze()
                             dist_p = compute_distance_map_pytorch(pb.unsqueeze(0).unsqueeze(0)).squeeze()
-                            hd_t = dist_t[pb].max().item()
-                            hd_p = dist_p[tb].max().item()
+                            hd_t = torch.quantile(dist_t[pb].float(), 0.95).item()
+                            hd_p = torch.quantile(dist_p[tb].float(), 0.95).item()
                             val_hd_list.append(max(hd_t, hd_p))
                             
             mean_dice = np.mean(val_dice_list) if val_dice_list else 0.0
