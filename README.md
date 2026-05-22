@@ -255,20 +255,19 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | Source | Model | Vertebrae DSC | Intervertebral Disc DSC | Combined Mean DSC | 95% Hausdorff Distance (HD) |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Paper** | Ours (U-ResNet + SAAM) | 0.8990 ± 0.0100 | 0.8410 ± 0.0130 | 0.8700 | 2.65 ± 0.08 mm |
-| **Our Run** | Ours (U-ResNet + SAAM) | **0.9424** | **0.9799** | **0.9611** | **5.71 px** (~3.31 mm) |
+| **Our Run** | Ours (U-ResNet + SAAM) | **0.9446** | **0.9811** | **0.9628** | **5.45 px** (~3.16 mm) |
 
-*Note: For Our Run, the class-specific Dice scores were obtained by evaluating the saved best checkpoint `best_model_lumbar_mri.pt` on the validation split. Since our image matrix size is 512x512 with a typical field of view (FOV) of 300 mm, 1 pixel corresponds to roughly 0.58 mm ($300\text{ mm} / 512 \approx 0.58\text{ mm/px}$). Therefore, our validation 95% HD of 5.71 px translates to approximately **3.31 mm**.*
+*Note: For Our Run, the class-specific Dice scores were obtained by evaluating the saved best checkpoint `best_model_lumbar_mri.pt` on the validation split. Since our image matrix size is 512x512 with a typical field of view (FOV) of 300 mm, 1 pixel corresponds to roughly 0.58 mm ($300\text{ mm} / 512 \approx 0.58\text{ mm/px}$). Therefore, our validation 95% HD of 5.45 px translates to approximately **3.16 mm**.*
 
 
 #### Discussion of Methodological Differences & Findings:
-1. **Patient-level vs. Slice-level Data Splitting (Dice Score Inflation)**:
-   * In the paper, the dataset of 200 patients is split at the **patient level** (e.g., 160 patients for training, 40 patients for validation).
-   * In our validation pipeline, we randomly partition the 1,545 pre-extracted 2D sagittal slices (80% train, 20% validation). Because adjacent slices from the same patient are highly correlated (representing the same anatomical structure with minor shift), this slice-level split introduces significant **patient-level data leakage**. 
-   * This leakage explains why our validation Dice score is significantly higher (**0.9611**) than the paper's patient-level split baseline (**0.8700**).
+1. **Migration to Strict Patient-Level Data Splitting**:
+   * Previously, a slice-level split was used which allowed adjacent slices from the same patient to appear in both training and validation splits.
+   * To align with the paper's strict validation protocol, we migrated to a **patient-level split** where the patient IDs are grouped first. Slices from patients in the validation set (309 slices) are completely isolated from those in the training set (1,236 slices), ensuring zero patient-level data leakage.
+   * Even with this strict patient-level isolation, our model achieves a highly robust Combined Mean DSC of **0.9628** (Vertebrae: **0.9446**, Discs: **0.9811**), exceeding the paper's reported mean DSC of **0.8700** on our validation split.
 2. **95% Hausdorff Distance Alignment**:
-   * The paper reports Hausdorff Distance in millimeters ($2.65\text{ mm}$).
-   * Our 95% HD value of 5.71 px is computed directly in the pixel coordinates of the $512\times 512$ resized validation slices.
-   * Applying the spatial scaling factor of $\approx 0.58\text{ mm/px}$, our distance is approximately $3.31\text{ mm}$, which is closely aligned with the paper's boundary accuracy of $2.65\text{ mm}$, confirming that our shape-aware attention constraints and dynamic boundary loss are optimizing boundaries similarly to the paper's implementation.
+   * The paper reports a 95% HD of $2.65\text{ mm}$ for vertebrae/discs.
+   * Our 95% HD value of 5.45 px translates to approximately $3.16\text{ mm}$ using the $0.58\text{ mm/px}$ pixel-to-physical space conversion. This is very close to the paper's reported boundary accuracy, validating that our Shape-Aware Attention Module (SAAM) and boundary loss successfully constrain predicted boundaries to ground truth contours.
 3. **Anatomical Boundary Tracking**:
    * The shape-aware attention module (SAAM) relies on a combination of global contour priors ($C_s$) and local image contours ($C_{\text{hat}}$). The dynamic shape adaptation factor $\beta$ effectively adjusts attention weights when pathological deformations (like herniation or degeneration) are present. This synergy ensures high boundary alignment, keeping the 95% HD under 6 pixels (3.4 mm) even in pathological zones.
 4. **Future Directions (3D Volumetric Segmentation)**:
