@@ -108,12 +108,10 @@ The network operates as a symmetric encoder-decoder pipeline with shape-aware at
 
 ```mermaid
 graph TD
-    %% Inputs
     Img["Input Image x (B, 1, 512, 512)"]
     Cs["Shape Prior C_s (B, 1, 512, 512)"]
     Chat["Active Contour C_hat (B, 1, 512, 512)"]
 
-    %% Network Blocks
     InitConv["Initial Projection (init_conv)"]
     Enc1["Encoder Stage 1 (enc1)"]
     Enc2["Encoder Stage 2 (enc2)"]
@@ -138,55 +136,65 @@ graph TD
     OutConv["Output Conv (out_conv)"]
     Logits["Predicted Logits (logits)"]
 
-    %% Data Flow Connections
     Img --> InitConv
     InitConv --> Enc1
-    InitConv -.-->|Skip 4| ASC4
-    Enc1 -->|Pool| Enc2
-    Enc1 -.-->|Skip 3| ASC3
-    Enc2 -->|Pool| Enc3
-    Enc2 -.-->|Skip 2| ASC2
-    Enc3 -->|Pool| Enc4
-    Enc3 -.-->|Skip 1| ASC1
+    InitConv -->|Skip 4| ASC4
+    Enc1 --> Enc2
+    Enc1 -->|Skip 3| ASC3
+    Enc2 --> Enc3
+    Enc2 -->|Skip 2| ASC2
+    Enc3 --> Enc4
+    Enc3 -->|Skip 1| ASC1
 
-    %% Bottom / Decoder Path
-    Enc4 -->|UpConv| ASC1
+    Enc4 --> ASC1
     ASC1 -->|F_fused| SAAM1
-    Cs -.-->|Bilinear Interpolate| SAAM1
-    Chat -.-->|Bilinear Interpolate| SAAM1
+    Cs -->|Bilinear Interpolate| SAAM1
+    Chat -->|Bilinear Interpolate| SAAM1
     SAAM1 -->|F_prime| Dec1
 
-    Dec1 -->|UpConv| ASC2
+    Dec1 --> ASC2
     ASC2 -->|F_fused| SAAM2
-    Cs -.-->|Bilinear Interpolate| SAAM2
-    Chat -.-->|Bilinear Interpolate| SAAM2
+    Cs -->|Bilinear Interpolate| SAAM2
+    Chat -->|Bilinear Interpolate| SAAM2
     SAAM2 -->|F_prime| Dec2
 
-    Dec2 -->|UpConv| ASC3
+    Dec2 --> ASC3
     ASC3 -->|F_fused| SAAM3
-    Cs -.-->|Bilinear Interpolate| SAAM3
-    Chat -.-->|Bilinear Interpolate| SAAM3
+    Cs -->|Bilinear Interpolate| SAAM3
+    Chat -->|Bilinear Interpolate| SAAM3
     SAAM3 -->|F_prime| Dec3
 
     Dec3 --> ASC4
     ASC4 -->|F_fused| SAAM4
-    Cs -.-->|Bilinear Interpolate| SAAM4
-    Chat -.-->|Bilinear Interpolate| SAAM4
+    Cs -->|Bilinear Interpolate| SAAM4
+    Chat -->|Bilinear Interpolate| SAAM4
     SAAM4 -->|F_prime| Dec4
 
     Dec4 --> OutConv
     OutConv --> Logits
 
-    %% Style / Color coding
-    classDef input fill:#e9ecef,stroke:#6c757d,stroke-width:2px;
-    classDef model fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px;
-    classDef attention fill:#d1e7dd,stroke:#198754,stroke-width:2px;
-    classDef gate fill:#f8d7da,stroke:#dc3545,stroke-width:2px;
-
-    class Img,Cs,Chat input;
-    class InitConv,Enc1,Enc2,Enc3,Enc4,Dec1,Dec2,Dec3,Dec4,OutConv,Logits model;
-    class SAAM1,SAAM2,SAAM3,SAAM4 attention;
-    class ASC1,ASC2,ASC3,ASC4 gate;
+    style Img fill:#e9ecef,stroke:#6c757d,stroke-width:2px
+    style Cs fill:#e9ecef,stroke:#6c757d,stroke-width:2px
+    style Chat fill:#e9ecef,stroke:#6c757d,stroke-width:2px
+    style InitConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Enc1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Enc2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Enc3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Enc4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Dec1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Dec2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Dec3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Dec4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style OutConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style Logits fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
+    style SAAM1 fill:#d1e7dd,stroke:#198754,stroke-width:2px
+    style SAAM2 fill:#d1e7dd,stroke:#198754,stroke-width:2px
+    style SAAM3 fill:#d1e7dd,stroke:#198754,stroke-width:2px
+    style SAAM4 fill:#d1e7dd,stroke:#198754,stroke-width:2px
+    style ASC1 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    style ASC2 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    style ASC3 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    style ASC4 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
 ```
 
 ---
