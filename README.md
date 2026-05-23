@@ -43,37 +43,248 @@ Where:
 *   $\lambda$ is a learnable parameter initialized to $0.1$.
 *   $\nabla F_0(x)$ is the spatial gradient magnitude computed via central differences.
 
+#### Code Implementation:
+```python
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1, use_drf=False):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.norm1 = ModalityAdaptiveNormalization(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+        if use_drf:
+            self.conv2 = SKConv(out_channels, out_channels)
+        else:
+            self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.norm2 = ModalityAdaptiveNormalization(out_channels)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                ModalityAdaptiveNormalization(out_channels)
+            )
+
+        # Trainable gradient smoothing coefficient (lambda)
+        self.lambd = nn.Parameter(torch.tensor(0.1))
+
+    def spatial_gradient(self, x):
+        dx = F.pad(x[:, :, :, 1:] - x[:, :, :, :-1], (0, 1, 0, 0))
+        dy = F.pad(x[:, :, 1:, :] - x[:, :, :-1, :], (0, 0, 0, 1))
+        return torch.sqrt(dx.pow(2) + dy.pow(2) + 1e-8)
+
+    def forward(self, x):
+        identity = self.shortcut(x)
+
+        out = self.conv1(x)
+        out = self.norm1(out)
+        out = self.relu(out)
+
+        F0 = self.conv2(out)
+        F0 = self.norm2(F0)
+
+        # Spatial gradient term: lambda * grad(F_0)
+        grad_F0 = self.spatial_gradient(F0)
+        F_x = F0 + self.lambd * grad_F0
+
+        out = F_x + identity
+        out = self.relu(out)
+        return out
+```
+
+#### Connection & Variable Logic:
+*   `F0` represents the intermediate feature representation $F_0(x)$ before shortcut addition.
+*   `self.spatial_gradient` calculates the central differences along the width (`dx`) and height (`dy`) dimensions, providing the gradient magnitude $\nabla F_0(x)$.
+*   `self.lambd` ($\lambda$) is a **trainable scaler** initialized to `0.1` that allows the model to learn the strength of the gradient regularization dynamically during backpropagation.
+
+#### How it fits in:
+*   **Integration**: `ResidualBlock` is the primary building block of both the encoder and decoder paths. In [model.py](model.py#L251-L321), stages `enc1`, `enc2`, `dec3`, and `dec4` use 2 blocks each with standard convolutions (`use_drf=False`), while stages `enc3`, `enc4`, `dec1`, and `dec2` use 3 blocks each with selective kernel convolutions (`use_drf=True`).
+*   **Data Flow**: During the forward pass, input features pass sequentially through the conv/norm/relu layers. The second convolution's output (`F0`) is passed to `spatial_gradient`, and its weighted gradient magnitude is added back to `F0` to yield `F_x`, stabilizing deep backpropagation gradients along delicate bony borders.
+
 ### B. Modality-Adaptive Normalization (MAN)
 To handle intensity differences across CT and MRI scans, MAN standardizes feature maps over spatial dimensions channel-by-channel:
 $$F_{\text{norm}}(s) = \frac{F(s) - \mu}{\sigma}$$
 This is implemented using PyTorch's `InstanceNorm2d` with learnable affine parameters, helping align features across multiple imaging modalities.
+
+#### Code Implementation:
+```python
+class ModalityAdaptiveNormalization(nn.Module):
+    def __init__(self, num_features, eps=1e-5):
+        super().__init__()
+        self.norm = nn.InstanceNorm2d(num_features, eps=eps, affine=True)
+
+    def forward(self, x):
+        return self.norm(x)
+```
+
+#### Connection & Variable Logic:
+*   Instead of standard Batch Normalization (which couples samples in a batch and struggles with heterogeneous datasets), MAN applies **Instance Normalization** (`InstanceNorm2d`).
+*   By setting `affine=True`, the module maintains learnable channel-specific scaling ($\gamma$) and shifting ($\beta$) parameters, aligning feature representations across different scanner settings.
+
+#### How it fits in:
+*   **Integration**: MAN is applied in every convolution layer throughout the network. It is instantiated inside `ResidualBlock` (as `self.norm1`, `self.norm2`, and `self.shortcut` norm layers in [model.py](model.py#L52)), inside the parallel standard and dilated conv branches of `SKConv` (in [model.py](model.py#L137)), and directly after the initial image projection layer `init_conv`.
+*   **Data Flow**: In the forward pass, every activation is normalized independently over the spatial grid channel-by-channel. This prevents instance-level intensity scale differences in CT and MRI from shifting the activations, ensuring stable multi-modal feature alignment.
 
 ### C. Dynamic Receptive Field Convolution (DRF Conv)
 We implement Selective Kernel (SK) Convolutions inside the deep stages of the network. This dynamically weights feature maps from convolutions of different kernel and dilation sizes ($3 \times 3$ standard and $3 \times 3$ dilated with $\text{dilation}=2$) using channel-wise squeeze-and-excitation:
 $$V = a \cdot F_{\text{std}} + b \cdot F_{\text{dilated}}$$
 This allows the network to automatically adapt to varying sizes of vertebrae and intervertebral discs.
 
+#### Code Implementation:
+```python
+class SKConv(nn.Module):
+    def __init__(self, in_channels, out_channels, branches=2, reduction=16, min_dim=32):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.branches = branches
+
+        # Branch 1: Standard 3x3 Conv
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            ModalityAdaptiveNormalization(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        # Branch 2: Dilated 3x3 Conv (Dilation=2, Receptive Field = 5x5)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=2, dilation=2, bias=False),
+            ModalityAdaptiveNormalization(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        mid_dim = max(out_channels // reduction, min_dim)
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(out_channels, mid_dim, kernel_size=1, bias=False),
+            nn.BatchNorm2d(mid_dim),
+            nn.ReLU(inplace=True)
+        )
+
+        self.fcs = nn.ModuleList([
+            nn.Conv2d(mid_dim, out_channels, kernel_size=1, bias=True)
+            for _ in range(branches)
+        ])
+
+    def forward(self, x):
+        feat1 = self.conv1(x)
+        feat2 = self.conv2(x)
+
+        # Squeeze-and-Excitation path
+        U = feat1 + feat2
+        S = self.gap(U)
+        Z = self.fc(S)
+
+        # Channel attention computation
+        att_weights = [fc(Z) for fc in self.fcs]
+        att_weights = torch.cat(att_weights, dim=1)
+        att_weights = F.softmax(att_weights.view(x.size(0), self.branches, self.out_channels, 1, 1), dim=1)
+
+        # Selection
+        V = feat1 * att_weights[:, 0] + feat2 * att_weights[:, 1]
+        return V
+```
+
+#### Connection & Variable Logic:
+*   `feat1` ($F_{\text{std}}$) captures local boundary cues, while `feat2` ($F_{\text{dilated}}$) extracts larger context.
+*   `U` fuses both representations to guide the squeeze path.
+*   `self.gap` squeezes spatial context into a $1 \times 1$ vector.
+*   `att_weights` ($a, b$) acts as a channel attention map containing selection coefficients for each convolution branch.
+
+#### How it fits in:
+*   **Integration**: `SKConv` replaces standard convolutions as the second convolution block inside `ResidualBlock` when `use_drf=True` is passed (instantiated in the deep encoder stages `enc3`, `enc4` and deep decoder stages `dec1`, `dec2` in [model.py](model.py#L268-L304)).
+*   **Data Flow**: When features reach the second convolution layer of a deep block, they are split and processed by two parallel branches: a standard $3\times3$ conv (`feat1`) and a dilated $3\times3$ conv (`feat2`, dilation=2). The channel-attention block pools the combined feature map, projects it, computes the softmax selection weights, and takes the weighted sum of `feat1` and `feat2`, dynamically adapting the receptive field to spinal structures of varying shapes and sizes.
+
 ### D. Adaptive Skip Connections (ASC)
 Traditional U-Net concatenates shallow features directly. ASC instead uses spatial-gated fusion:
 $$F_{\text{fused}}(s) = \alpha(s) \cdot F_{\text{shallow}}(s) + (1 - \alpha(s)) \cdot F_{\text{deep}}(s)$$
 Where $\alpha(s) \in [0, 1]$ is a spatial weight map generated by feeding concatenated features into a $3 \times 3$ convolution layer followed by a Sigmoid function.
 
+#### Code Implementation:
+```python
+class AdaptiveSkipConnection(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.gate_conv = nn.Sequential(
+            nn.Conv2d(2 * channels, 1, kernel_size=3, padding=1, bias=True),
+            nn.Sigmoid()
+        )
+
+    def forward(self, F_shallow, F_deep):
+        concat_features = torch.cat([F_shallow, F_deep], dim=1)
+        alpha = self.gate_conv(concat_features) # Shape: (B, 1, H, W)
+        
+        F_fused = alpha * F_shallow + (1.0 - alpha) * F_deep
+        return F_fused
+```
+
+#### Connection & Variable Logic:
+*   `alpha` ($\alpha(s)$) is a **2D spatial weight map** with values scaled to $[0, 1]$ via Sigmoid.
+*   The connection dynamically filters out noise in shallow features (e.g. background muscle tissue) and integrates target structure context (e.g., vertebrae lines) before decoder upsampling.
+
+#### How it fits in:
+*   **Integration**: Four ASC modules (`asc1` to `asc4`) are instantiated at the transition points between the encoder and decoder levels in [model.py](model.py#L288-L316).
+*   **Data Flow**: During the decoder forward pass, after upsampling the deep decoder features (e.g., `up_conv1(e4)`), they are passed into the corresponding ASC module (e.g., `asc1`) along with the shallow encoder skip features (`e3`). ASC concatenates them, generates the spatial gating map `alpha`, and outputs the gated fusion `d_fused` to be fed directly into the SAAM attention block.
+
 ### E. Shape-Aware Attention Module (SAAM)
-SAAM merges semantic features $S(s)$ with contour prior $C_s(s)$ and active contour $\hat{C}(s)$:
-1.  **Shape Consistency:** Measures the alignment of prior shapes and semantic maps:
+SAAM merges semantic features $S(s)$ with prior contour distance maps $C_s(s)$ and active boundaries $\hat{C}(s)$:
+1.  **Shape Consistency (Correlation):**
     $$\text{Corr}(s) = S(s) \cdot C_s(s)$$
 2.  **Initial Attention Weights:**
     $$A_0(s) = \text{Softmax}(\text{Corr}(s))$$
-3.  **Dynamic Shape Adaptation Factor:** Adjusts focus based on actual contour deviation (to handle pathological shape changes like herniated discs or fractures):
+3.  **Dynamic Shape Adaptation Factor:**
     $$\beta(s) = 1 - \frac{|C_s(s) - \hat{C}(s)|}{|C_s(s)| + |\hat{C}(s)| + \epsilon}$$
-4.  **Final Spatial Attention weight:**
+4.  **Final Spatial Attention Weight:**
     $$A(s) = \beta(s) \cdot A_0(s) + (1 - \beta(s)) \cdot \text{MeanPool}(A_0(s))$$
-5.  **Optimized Feature Representation:** Fuses the original features with a Gaussian smoothed copy to suppress background noise:
+5.  **Optimized Feature Representation:**
     $$F'(s) = F(s) \cdot A(s) + \text{GaussianBlur}(F(s) \cdot (1 - A(s)))$$
+
+#### Code Implementation:
+```python
+class ShapeAwareAttentionModule(nn.Module):
+    def __init__(self, channels, kernel_size=5, sigma=1.5):
+        super().__init__()
+        self.channels = channels
+        self.gaussian_blur = GaussianBlur(channels, kernel_size=kernel_size, sigma=sigma)
+        self.mean_pool = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)
+
+    def forward(self, F_sem, C_s, C_hat):
+        B, C, H, W = F_sem.shape
+
+        # Match prior resolution to decoder feature size
+        C_s_resized = F.interpolate(C_s, size=(H, W), mode='bilinear', align_corners=True)
+        C_hat_resized = F.interpolate(C_hat, size=(H, W), mode='bilinear', align_corners=True)
+
+        Corr = F_sem * C_s_resized
+        A0 = F.softmax(Corr.view(B, C, -1), dim=-1).view(B, C, H, W)
+
+        diff = torch.abs(C_s_resized - C_hat_resized)
+        denom = torch.abs(C_s_resized) + torch.abs(C_hat_resized) + 1e-6
+        beta = 1.0 - (diff / denom)
+
+        mean_pool_A0 = self.mean_pool(A0)
+        A = beta * A0 + (1.0 - beta) * mean_pool_A0
+
+        term1 = F_sem * A
+        term2 = self.gaussian_blur(F_sem * (1.0 - A))
+        F_prime = term1 + term2
+        return F_prime
+```
+
+#### Connection & Variable Logic:
+*   `C_s` is the static distance transform map. `C_hat` represents the active contour of target objects computed on-the-fly from input images.
+*   `beta` ($\beta(s)$) is the shape deviation scale. If prior and active contours match, $\beta(s) \approx 1.0$ (strongly enforcing the prior attention map $A_0(s)$). If there is a pathological deformation, $\beta(s) \to 0$ (relying instead on localized average-pooled attention).
+*   `term2` applies a depthwise Gaussian convolution to smooth features in background (non-attended) regions, preventing clutter.
+
+#### How it fits in:
+*   **Integration**: Four SAAM modules (`saam1` to `saam4`) are integrated into each expanding decoder stage immediately following the Adaptive Skip Connection (ASC) fusion in [model.py](model.py#L342-L360).
+*   **Data Flow**: SAAM receives the fused features `d_fused`, the static shape prior distance map `C_s`, and the active contour map `C_hat`. After resizing the priors to match the stage's spatial resolution, SAAM computes the spatial attention weight map `A` (correcting for pathological shape deviations via `beta`), weights the features using `A`, applies Gaussian smoothing to the background features, and produces the final shape-attended representation `d_att` which is then passed to the decoder residual block.
 
 ---
 
 ## 3. Dynamically Weighted combined Loss (SpineLoss)
+
+The loss function is designed to handle extreme class imbalances and blurry boundaries, combining a density-weighted Region Loss, distance-weighted Boundary Loss, and slice-level Volume Loss.
 
 Implemented in [loss.py](loss.py):
 $$L_{\text{final}} = L_{\text{total}} + 0.1 \cdot L_{\text{vol}}$$
@@ -96,6 +307,84 @@ This dynamic scaling focuses on regional loss when targets are small, and focuse
 ### D. Volume Loss ($L_{\text{vol}}$)
 Measures the absolute difference in target volumes for 2D slices:
 $$L_{\text{vol}} = \left| \frac{1}{|\Omega|} \sum P(s) - \frac{1}{|\Omega|} \sum G(s) \right|$$
+
+#### Code Implementation:
+```python
+class SpineLoss(nn.Module):
+    def __init__(self, gamma=0.5, lambda_density=1.0, lambda_boundary=1.0, kernel_size=5, sigma=1.5):
+        super().__init__()
+        self.gamma = gamma
+        self.lambda_density = lambda_density
+        self.lambda_boundary = lambda_boundary
+        
+        # Setup static Gaussian kernel for smoothing the boundary
+        kernel = gaussian_kernel_2d(kernel_size, sigma)
+        self.register_buffer('gaussian_kernel', kernel.unsqueeze(0).unsqueeze(0))
+        self.pad = kernel_size // 2
+
+    def gaussian_blur2d(self, x):
+        B, C, H, W = x.shape
+        kernel = self.gaussian_kernel.to(x.device).repeat(C, 1, 1, 1)
+        return F.conv2d(x, kernel, padding=self.pad, groups=C)
+
+    def forward(self, logits, targets):
+        B, C_classes, H, W = logits.shape
+        device = logits.device
+
+        # Convert targets to one-hot representation: (B, C_classes, H, W)
+        G = F.one_hot(targets, num_classes=C_classes).permute(0, 3, 1, 2).float()
+        probs = F.softmax(logits, dim=1)
+        probs_clamp = torch.clamp(probs, min=1e-7, max=1.0 - 1e-7)
+
+        # 1. Dynamic weights alpha and beta based on target proportion
+        G_foreground = (targets > 0).float()
+        target_proportion = G_foreground.sum(dim=(1, 2)) / (H * W)
+        alpha = 1.0 - self.gamma * target_proportion
+        beta = 1.0 - alpha
+
+        alpha = alpha.view(B, 1, 1, 1)
+        beta = beta.view(B, 1, 1, 1)
+
+        # 2. Density weight w(s) and boundary distance weight d(s) per class
+        w = torch.ones_like(G)
+        d = torch.ones_like(G)
+
+        for c in range(1, C_classes):
+            G_c = G[:, c:c+1]
+            local_density = F.avg_pool2d(G_c, kernel_size=15, stride=1, padding=7)
+            w[:, c:c+1] = 1.0 + self.lambda_density * G_c * torch.exp(-local_density)
+
+            dilation = F.max_pool2d(G_c, kernel_size=3, stride=1, padding=1)
+            erosion = -F.max_pool2d(-G_c, kernel_size=3, stride=1, padding=1)
+            boundary = dilation - erosion
+            smoothed_boundary = self.gaussian_blur2d(boundary)
+            d[:, c:c+1] = 1.0 + self.lambda_boundary * smoothed_boundary
+
+        # 3. Region, Boundary, and Volume Loss
+        loss_reg = w * (-G * torch.log(probs_clamp) - (1.0 - G) * torch.log(1.0 - probs_clamp))
+        L_region = loss_reg.mean(dim=(1, 2, 3))
+
+        loss_bound = d * torch.abs(probs - G)
+        L_boundary = loss_bound.mean(dim=(1, 2, 3))
+
+        L_vol = torch.abs(probs[:, 1:].mean(dim=(2, 3)) - G[:, 1:].mean(dim=(2, 3))).mean(dim=1)
+
+        # 4. Total Loss combination
+        L_total = alpha.squeeze() * L_region + beta.squeeze() * L_boundary
+        L_final = L_total + 0.1 * L_vol
+
+        return L_final.mean(), L_region.mean(), L_boundary.mean(), L_vol.mean()
+```
+
+#### Connection & Variable Logic:
+*   `G` converts the ground-truth integer mask into one-hot format to calculate class-specific targets.
+*   `local_density` is computed using a $15 \times 15$ average pool over the target mask. It scales region loss weights `w` so that smaller or more isolated target structures (like thin disc boundaries) get penalised more heavily.
+*   `boundary` is computed by taking the difference between dilated and eroded target masks (equivalent to a morphological gradient), pinpointing exact interface boundaries.
+*   `alpha` and `beta` dynamically trade off standard pixel classifications against boundary alignment. When the target occupies a small fraction of the image, `alpha` (region focus) increases; when it occupies more space, `beta` (boundary alignment focus) increases.
+
+#### How it fits in:
+*   **Integration**: `SpineLoss` is instantiated in [main.py](main.py#L427) (as `criterion`) and invoked inside the train step (`train_epoch` in [main.py](main.py#L90)).
+*   **Data Flow**: During training, the predicted logits and target ground-truth masks are fed into the loss function. The returned scalar loss is backpropagated to compute gradients, driving model parameters to optimize region coverage, boundary alignment, and volume consistency simultaneously.
 
 ---
 
