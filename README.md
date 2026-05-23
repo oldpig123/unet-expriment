@@ -99,7 +99,22 @@ $$L_{\text{vol}} = \left| \frac{1}{|\Omega|} \sum P(s) - \frac{1}{|\Omega|} \sum
 
 ---
 
-## 4. Real Datasets & Dataloader Configuration
+## 4. Code Correspondence to Paper Concepts
+
+To show the exact link between the mathematical concepts detailed in the paper and our codebase, we provide the map of components below:
+
+| Concept / Equation in Paper | PyTorch Class / Function | Source Code File & Location | Implementation Details |
+| :--- | :--- | :--- | :--- |
+| **Modality-Adaptive Normalization (MAN)** | `ModalityAdaptiveNormalization` | [model.py](model.py#L5) | Performs instance normalization along spatial dimensions with learnable affine parameters ($\gamma, \beta$) to align MRI and CT intensity scales. |
+| **Dynamic Receptive Field (DRF) Conv** | `SKConv` | [model.py](model.py#L44) | Multi-scale Selective Kernel (SK) convolution. Fuses outputs of $3\times3$ standard and dilated ($\text{dilation}=2$) convolutions via global pooling and soft attention. |
+| **U-ResNet Residual Block** | `ResidualBlock` | [model.py](model.py#L105) | Extends traditional residual blocks by adding a local spatial gradient smoothing term $\nabla F_0(x)$ with a learnable weight $\lambda$ (initialized to $0.1$). |
+| **Adaptive Skip Connection (ASC)** | `AdaptiveSkipConnection` | [model.py](model.py#L165) | Replaces simple U-Net concatenation with a gated fusion network that computes a spatial map $\alpha(s)$ via Sigmoid to filter low-level details. |
+| **Shape-Aware Attention (SAAM)** | `ShapeAwareAttentionModule` | [model.py](model.py#L188) | Computes alignment correlation between semantic maps and shape priors, scales attention via shape deviation factor $\beta(s)$, and applies Gaussian blur to suppress noise. |
+| **Combined Spine Loss** | `SpineLoss` | [loss.py](loss.py#L15) | Dynamically weights region cross-entropy (with density maps) and boundary L1 loss (with distance maps), and adds slice-level volume error ($L_{\text{vol}}$). |
+
+---
+
+## 5. Real Datasets & Dataloader Configuration
 
 The repository implements data loaders for the clinical datasets under [dataset.py](dataset.py). To ensure rapid training and prevent memory bottlenecks, we download, preprocess, and cache the datasets locally as 2D sagittal PNG slices.
 
@@ -138,7 +153,7 @@ This reduces training epoch time by **~90%** with negligible impact on normalize
 
 ---
 
-## 5. Training & CLI Reference
+## 6. Training & CLI Reference
 
 ### A. Environment Synchronization
 Ensure Python dependencies (`nibabel`, `pydicom`, `matplotlib`, `scipy`, `torch`) are installed locally:
@@ -171,7 +186,7 @@ uv run python main.py --dataset simulated
 
 ---
 
-## 6. Official Training Runs & Verification Results
+## 7. Official Training Runs & Verification Results
 
 All training runs are executed using the official hyperparameters noted in the paper, adjusted dynamically to fit within GPU VRAM limits (specifically setting `base_channels=32` to avoid CUDA out-of-memory errors on Quadro RTX 8000 while maintaining accuracy):
 
