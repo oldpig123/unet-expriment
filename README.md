@@ -173,28 +173,28 @@ graph TD
     Dec4 --> OutConv
     OutConv --> Logits
 
-    style Img fill:#e9ecef,stroke:#6c757d,stroke-width:2px
-    style Cs fill:#e9ecef,stroke:#6c757d,stroke-width:2px
-    style Chat fill:#e9ecef,stroke:#6c757d,stroke-width:2px
-    style InitConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Enc1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Enc2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Enc3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Enc4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Dec1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Dec2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Dec3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Dec4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style OutConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style Logits fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px
-    style SAAM1 fill:#d1e7dd,stroke:#198754,stroke-width:2px
-    style SAAM2 fill:#d1e7dd,stroke:#198754,stroke-width:2px
-    style SAAM3 fill:#d1e7dd,stroke:#198754,stroke-width:2px
-    style SAAM4 fill:#d1e7dd,stroke:#198754,stroke-width:2px
-    style ASC1 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
-    style ASC2 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
-    style ASC3 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
-    style ASC4 fill:#f8d7da,stroke:#dc3545,stroke-width:2px
+    style Img fill:#e9ecef,stroke:#6c757d,stroke-width:2px,color:#212529
+    style Cs fill:#e9ecef,stroke:#6c757d,stroke-width:2px,color:#212529
+    style Chat fill:#e9ecef,stroke:#6c757d,stroke-width:2px,color:#212529
+    style InitConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Enc1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Enc2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Enc3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Enc4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Dec1 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Dec2 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Dec3 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Dec4 fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style OutConv fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style Logits fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px,color:#084298
+    style SAAM1 fill:#d1e7dd,stroke:#198754,stroke-width:2px,color:#0f5132
+    style SAAM2 fill:#d1e7dd,stroke:#198754,stroke-width:2px,color:#0f5132
+    style SAAM3 fill:#d1e7dd,stroke:#198754,stroke-width:2px,color:#0f5132
+    style SAAM4 fill:#d1e7dd,stroke:#198754,stroke-width:2px,color:#0f5132
+    style ASC1 fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#842029
+    style ASC2 fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#842029
+    style ASC3 fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#842029
+    style ASC4 fill:#f8d7da,stroke:#dc3545,stroke-width:2px,color:#842029
 ```
 
 ---
