@@ -101,16 +101,117 @@ $$L_{\text{vol}} = \left| \frac{1}{|\Omega|} \sum P(s) - \frac{1}{|\Omega|} \sum
 
 ## 4. Code Correspondence to Paper Concepts
 
-To show the exact link between the mathematical concepts detailed in the paper and our codebase, we provide the map of components below:
+To show the exact link between the mathematical concepts detailed in the paper and our codebase, we provide a detailed layout of the network's data flow, block connections, and concrete implementations.
 
-| Concept / Equation in Paper | PyTorch Class / Function | Source Code File & Location | Implementation Details |
+### A. Network Data Flow & Block Connections
+The network operates as a symmetric encoder-decoder pipeline with shape-aware attention and gated skip fusions. The data flow, inputs, and connections between functional blocks are illustrated below:
+
+```mermaid
+graph TD
+    %% Inputs
+    Img["Input Image x (B, 1, 512, 512)"]
+    Cs["Shape Prior C_s (B, 1, 512, 512)"]
+    Chat["Active Contour C_hat (B, 1, 512, 512)"]
+
+    %% Network Blocks
+    InitConv["Initial Projection (init_conv)"]
+    Enc1["Encoder Stage 1 (enc1)"]
+    Enc2["Encoder Stage 2 (enc2)"]
+    Enc3["Encoder Stage 3 (SKConv/DRF) (enc3)"]
+    Enc4["Encoder Stage 4 (SKConv/DRF) (enc4)"]
+
+    ASC1["Adaptive Skip Connection 1 (asc1)"]
+    ASC2["Adaptive Skip Connection 2 (asc2)"]
+    ASC3["Adaptive Skip Connection 3 (asc3)"]
+    ASC4["Adaptive Skip Connection 4 (asc4)"]
+
+    SAAM1["Shape-Aware Attention 1 (saam1)"]
+    SAAM2["Shape-Aware Attention 2 (saam2)"]
+    SAAM3["Shape-Aware Attention 3 (saam3)"]
+    SAAM4["Shape-Aware Attention 4 (saam4)"]
+
+    Dec1["Decoder Stage 1 (dec1)"]
+    Dec2["Decoder Stage 2 (dec2)"]
+    Dec3["Decoder Stage 3 (dec3)"]
+    Dec4["Decoder Stage 4 (dec4)"]
+
+    OutConv["Output Conv (out_conv)"]
+    Logits["Predicted Logits (logits)"]
+
+    %% Data Flow Connections
+    Img --> InitConv
+    InitConv --> Enc1
+    InitConv -.-->|Skip 4| ASC4
+    Enc1 -->|Pool| Enc2
+    Enc1 -.-->|Skip 3| ASC3
+    Enc2 -->|Pool| Enc3
+    Enc2 -.-->|Skip 2| ASC2
+    Enc3 -->|Pool| Enc4
+    Enc3 -.-->|Skip 1| ASC1
+
+    %% Bottom / Decoder Path
+    Enc4 -->|UpConv| ASC1
+    ASC1 -->|F_fused| SAAM1
+    Cs -.-->|Bilinear Interpolate| SAAM1
+    Chat -.-->|Bilinear Interpolate| SAAM1
+    SAAM1 -->|F_prime| Dec1
+
+    Dec1 -->|UpConv| ASC2
+    ASC2 -->|F_fused| SAAM2
+    Cs -.-->|Bilinear Interpolate| SAAM2
+    Chat -.-->|Bilinear Interpolate| SAAM2
+    SAAM2 -->|F_prime| Dec2
+
+    Dec2 -->|UpConv| ASC3
+    ASC3 -->|F_fused| SAAM3
+    Cs -.-->|Bilinear Interpolate| SAAM3
+    Chat -.-->|Bilinear Interpolate| SAAM3
+    SAAM3 -->|F_prime| Dec3
+
+    Dec3 --> ASC4
+    ASC4 -->|F_fused| SAAM4
+    Cs -.-->|Bilinear Interpolate| SAAM4
+    Chat -.-->|Bilinear Interpolate| SAAM4
+    SAAM4 -->|F_prime| Dec4
+
+    Dec4 --> OutConv
+    OutConv --> Logits
+
+    %% Style / Color coding
+    classDef input fill:#e9ecef,stroke:#6c757d,stroke-width:2px;
+    classDef model fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px;
+    classDef attention fill:#d1e7dd,stroke:#198754,stroke-width:2px;
+    classDef gate fill:#f8d7da,stroke:#dc3545,stroke-width:2px;
+
+    class Img,Cs,Chat input;
+    class InitConv,Enc1,Enc2,Enc3,Enc4,Dec1,Dec2,Dec3,Dec4,OutConv,Logits model;
+    class SAAM1,SAAM2,SAAM3,SAAM4 attention;
+    class ASC1,ASC2,ASC3,ASC4 gate;
+```
+
+---
+
+### B. Detailed Concept-to-Code Mapping
+
+| Concept / Block in Paper | PyTorch Class / Function | Source Code File & Location | Variables & Connection Logic |
 | :--- | :--- | :--- | :--- |
-| **Modality-Adaptive Normalization (MAN)** | `ModalityAdaptiveNormalization` | [model.py](model.py#L5) | Performs instance normalization along spatial dimensions with learnable affine parameters ($\gamma, \beta$) to align MRI and CT intensity scales. |
-| **Dynamic Receptive Field (DRF) Conv** | `SKConv` | [model.py](model.py#L44) | Multi-scale Selective Kernel (SK) convolution. Fuses outputs of $3\times3$ standard and dilated ($\text{dilation}=2$) convolutions via global pooling and soft attention. |
-| **U-ResNet Residual Block** | `ResidualBlock` | [model.py](model.py#L105) | Extends traditional residual blocks by adding a local spatial gradient smoothing term $\nabla F_0(x)$ with a learnable weight $\lambda$ (initialized to $0.1$). |
-| **Adaptive Skip Connection (ASC)** | `AdaptiveSkipConnection` | [model.py](model.py#L165) | Replaces simple U-Net concatenation with a gated fusion network that computes a spatial map $\alpha(s)$ via Sigmoid to filter low-level details. |
-| **Shape-Aware Attention (SAAM)** | `ShapeAwareAttentionModule` | [model.py](model.py#L188) | Computes alignment correlation between semantic maps and shape priors, scales attention via shape deviation factor $\beta(s)$, and applies Gaussian blur to suppress noise. |
-| **Combined Spine Loss** | `SpineLoss` | [loss.py](loss.py#L15) | Dynamically weights region cross-entropy (with density maps) and boundary L1 loss (with distance maps), and adds slice-level volume error ($L_{\text{vol}}$). |
+| **Initial Projection** | `init_conv` | [model.py](model.py#L247) | Projects input image $x$ `(B, 1, 512, 512)` to feature dimension `base_channels` using standard $3\times3$ convolution and normalization. |
+| **U-ResNet Residual Block** | `ResidualBlock` | [model.py](model.py#L105) | Replaces standard convolutions. Performs feature extraction $F_0(x)$, computes local spatial gradients $\nabla F_0(x)$ along X and Y axes using central differences (via `self.spatial_gradient` at line 135), and weights them with a learnable parameter `self.lambd` ($\lambda$, initialized to $0.1$). |
+| **Modality-Adaptive Normalization (MAN)** | `ModalityAdaptiveNormalization` | [model.py](model.py#L5) | Performs instance-level spatial normalization over each feature channel with learnable affine parameters to align feature maps across MRI and CT domains. Integrates into all `ResidualBlock` stages. |
+| **Dynamic Receptive Field (DRF) Conv** | `SKConv` | [model.py](model.py#L44) | Extends `ResidualBlock` in deep contracting/expanding stages (`enc3`, `enc4`, `dec1`, `dec2`). Splits features into standard and dilated ($\text{dilation}=2$) branches. Uses Global Average Pooling and linear projections to compute soft branch-selection weights (`att_weights` at line 98) to dynamically adjust feature focus. |
+| **Adaptive Skip Connection (ASC)** | `AdaptiveSkipConnection` | [model.py](model.py#L165) | Controls skip-connection flow. Concatenates shallow features `F_shallow` from the encoder with upsampled deep features `F_deep` from the decoder, projects them to a spatial attention mask `alpha` ($\alpha(s) \in [0, 1]$) via a $3\times3$ convolution and Sigmoid, and dynamically fuses them. |
+| **Shape-Aware Attention (SAAM)** | `ShapeAwareAttentionModule` | [model.py](model.py#L188) | Sits on each decoder layer. Merges semantic features `F_sem` with distance priors `C_s` and active contours `C_hat` (interpolated dynamically to match current feature spatial resolution). Fuses soft correlation attention $A_0(s)$ with local averaged attention weighted by a shape adaptation factor $\beta(s)$ (`beta` at line 219) to handle pathological deformations. |
+| **Output Classification** | `out_conv` | [model.py](model.py#L324) | Applies a final $1\times1$ convolution to map the output of the final decoder block `d4` from `base_channels` back to the desired number of segmentation classes (`n_classes`). |
+| **Dynamically Balanced Spine Loss** | `SpineLoss` | [loss.py](loss.py#L15) | Evaluates prediction logits against targets. Combines weighted cross-entropy (Region Loss, weighted by local target density maps) and L1 Boundary Loss (Boundary Loss, weighted by Gaussian-blurred target boundaries). Weights are scaled dynamically using `alpha` and `beta` based on relative class size. Includes a slice-level L1 Volume Loss ($L_{\text{vol}}$). |
+
+---
+
+### C. Gated Connection & Prior Downsampling Logic
+1. **Dynamic Resolution Rescaling of Priors**: In the forward pass of `UResNet_Attention` (lines 326-365 in [model.py](model.py)), features are downsampled by pooling layers (`pool1` to `pool3`) down to a bottleneck size of $64\times64$. The inputs `C_s` (contour prior) and `C_hat` (active contour), however, are provided at the full $512\times512$ resolution. Inside the SAAM modules (`saam1` to `saam4`), the distance maps are dynamically downsampled using bilinear interpolation (`F.interpolate` with `align_corners=True` at lines 206-207) to match the spatial dimensions of the current decoder stage ($128\times128$, $256\times256$, or $512\times512$).
+2. **Gated Skip Fusion**: Gated skip connections (`asc1` to `asc4`) evaluate Concatenated shallow and deep features to output a spatial weight map:
+   $$\alpha(s) = \sigma(\text{Conv}_{3\times3}([F_{\text{shallow}}, F_{\text{deep}}]))$$
+   This gating factor adjusts the blend of low-level geometric details (from the encoder) and abstract semantic context (from the decoder) dynamically based on local content.
+3. **Contour Prior Correction (Deformable Blending)**: When pathological anomalies are present (e.g. fractured vertebrae or herniated discs), the pre-extracted static prior `C_s` deviates from the actual target shape. To correct for this, SAAM computes the relative contour delta (`diff / denom` at lines 217-219) between `C_s` and the active contour `C_hat` (extracted from the raw input image). This delta is used to down-weight the static prior's influence (`beta` $\to 0$) and blend in the local neighborhood average-pooled attention (`mean_pool_A0`), making the network highly robust to severe structural deformations.
 
 ---
 
