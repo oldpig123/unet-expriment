@@ -415,10 +415,25 @@ def main():
         start_epoch = 1
         start_step = 0
         
-        if args.checkpoint_path and os.path.exists(args.checkpoint_path):
+        temp_checkpoint_path = None
+        if args.checkpoint_path:
+            dir_name, file_name = os.path.split(args.checkpoint_path)
+            if file_name.startswith("best_model_"):
+                new_file_name = file_name.replace("best_model_", "checkpoint_")
+            else:
+                new_file_name = "checkpoint_" + file_name
+            temp_checkpoint_path = os.path.join(dir_name, new_file_name)
+
+        load_path = None
+        if temp_checkpoint_path and os.path.exists(temp_checkpoint_path):
+            load_path = temp_checkpoint_path
+        elif args.checkpoint_path and os.path.exists(args.checkpoint_path):
+            load_path = args.checkpoint_path
+
+        if load_path:
             try:
-                print(f"[Checkpoint] Loading checkpoint from {args.checkpoint_path} to resume training...")
-                checkpoint = torch.load(args.checkpoint_path, map_location=device, weights_only=False)
+                print(f"[Checkpoint] Loading checkpoint from {load_path} to resume training...")
+                checkpoint = torch.load(load_path, map_location=device, weights_only=False)
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                 
@@ -498,14 +513,14 @@ def main():
                 
                 # Save intermediate checkpoint every 500 steps to protect against server restarts
                 if (step_idx + 1) % 500 == 0:
-                    if args.checkpoint_path:
+                    if temp_checkpoint_path:
                         torch.save({
                             'epoch': epoch,
                             'step': step_idx,
                             'model_state_dict': model.state_dict(),
                             'optimizer_state_dict': optimizer.state_dict(),
                             'val_dice': best_val_dice
-                        }, args.checkpoint_path)
+                        }, temp_checkpoint_path)
                         print(f"[Checkpoint] Saved intermediate checkpoint at Epoch {epoch:02d}, Step {step_idx+1}")
                 
             if num_batches > 0:
@@ -582,7 +597,7 @@ def main():
                 best_val_dice = mean_dice
                 epochs_no_improve = 0
                 if args.checkpoint_path:
-                    torch.save({
+                    ckpt_dict = {
                         'epoch': epoch,
                         'step': -1,
                         'model_state_dict': model.state_dict(),
@@ -590,7 +605,10 @@ def main():
                         'val_dice': best_val_dice,
                         'val_iou': mean_iou,
                         'val_hd': mean_hd
-                    }, args.checkpoint_path)
+                    }
+                    torch.save(ckpt_dict, args.checkpoint_path)
+                    if temp_checkpoint_path:
+                        torch.save(ckpt_dict, temp_checkpoint_path)
                     print(f"[Checkpoint] Saved best model to {args.checkpoint_path} (Val Dice: {best_val_dice:.4f})")
             else:
                 epochs_no_improve += 1

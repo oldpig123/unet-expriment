@@ -270,6 +270,18 @@ We compare our implementation's best results with the SOTA metrics reported in t
 *Note: In our implementation, we formulate vertebrae segmentation as a binary task (Vertebrae vs. Background) to verify the backbone, shape-aware attention, and loss components. Hence, we report a single combined Vertebrae Val Dice. For the VerSe dataset, the CT resolution is isotropic at 1.0 mm/voxel, meaning 1 pixel corresponds exactly to 1.0 mm. Thus, our 95% HD of 6.19 px corresponds to 6.19 mm.*
 
 #### Discussion of Methodological Differences & Findings:
+
+To facilitate a rigorous comparison, we document the specific implementation and training adjustments made in our pipeline relative to the original paper:
+
+| Feature / Protocol | Original Paper | Our Implementation | Rationale / Outcome |
+| :--- | :--- | :--- | :--- |
+| **Model Parameters** | **14.5M** (`base_channels=64`) | **8.57M** (`base_channels=32`) | Reduced capacity (60% footprint) to fit parallel training runs within VRAM limit. Retains high Dice scores. |
+| **Volumetric Alignment**| Spinal midline detection alignment | PIR Reorientation + isotropic resampling | Standardized affine resampling to $1.0\text{ mm}$ voxel spacing before sagittal slice extraction. |
+| **VerSe Target Classes**| 3 Sub-classes (Normal, Abnormal, Small) | 1 Binary Class (Vertebrae vs. Background) | Simplified evaluation of shape-aware module and backbone on overall vertebrae segmentation. |
+| **Training Epochs** | MRI: 100 epochs, VerSe: 200 epochs | Max 50 epochs + Early Stopping | Fast convergence checks. Early stopping triggers validation after 5 consecutive epochs of no Dice improvement. |
+| **Splitting Strategy** | Standard partition (details unspecified) | Strict patient-level split (80/20) | Guarantees zero patient-level data leakage between training and validation slices. |
+| **Metric Units (95% HD)**| Millimeters (mm) | Pixels (converted to mm post-hoc) | Logged directly on $512 \times 512$ grids. Spacings: MRI $\approx 0.586\text{ mm/px}$, CT $= 1.0\text{ mm/px}$. |
+
 1. **Migration to Strict Patient-Level Data Splitting & High Dice Performance**:
    * Previously, a slice-level split was used which allowed adjacent slices from the same patient to appear in both training and validation splits.
    * To align with the paper's strict validation protocol, we migrated to a **patient-level split** where the patient IDs are grouped first. Slices from patients in the validation set (309 slices) are completely isolated from those in the training set (1,236 slices), ensuring zero patient-level data leakage.
