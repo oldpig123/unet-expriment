@@ -7,6 +7,7 @@ import sys
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import re
 
 # Import custom model and loss
 from model import UResNet_Attention
@@ -42,70 +43,33 @@ def verify_gpu():
     print("=" * 60 + "\n")
     return device
 
-def compute_distance_map_pytorch(mask, downsample_res=128):
+def compute_distance_map_pytorch(mask, downsample_res=None):
     """
-    Vectorized, GPU-compatible Euclidean Distance Transform (EDT) approximation in PyTorch.
-    Computes the distance from each pixel to the nearest boundary/edge pixel.
-    To avoid O(N*H*W) overhead on large resolutions, we perform computation on a downsampled
-    grid (e.g. 128x128) and interpolate back to original size.
+    Computes Exact Euclidean Distance Transform (EDT) using scipy on CPU.
+    This is drastically faster and mathematically exact compared to pairwise GPU distances.
     """
+    from scipy.ndimage import distance_transform_edt
+    
     B, C, H, W = mask.shape
     device = mask.device
     
-    # If the mask is already small or equal to downsample resolution, do not downsample
-    down_h = min(H, downsample_res)
-    down_w = min(W, downsample_res)
-    
-    if H != down_h or W != down_w:
-        mask_down = F.interpolate(mask.float(), size=(down_h, down_w), mode='bilinear', align_corners=False) > 0.2
-    else:
-        mask_down = mask
-        
-    # Create spatial coordinate grids
-    grid_y, grid_x = torch.meshgrid(
-        torch.arange(down_h, dtype=torch.float32, device=device),
-        torch.arange(down_w, dtype=torch.float32, device=device),
-        indexing='ij'
-    ) # (down_h, down_w) each
-    
+    # We convert to numpy, do EDT on CPU, and convert back.
+    mask_np = mask.detach().cpu().numpy()
     dist_maps = []
+    
     for b in range(B):
-        edge_indices = torch.nonzero(mask_down[b, 0]) # (N, 2)
-        if len(edge_indices) == 0:
-            # If no edge pixels, return maximum possible distance map
-            max_dist = math.sqrt(down_h**2 + down_w**2)
-            dist_maps.append(torch.full((1, down_h, down_w), max_dist, device=device))
+        # EDT requires background to be 1 and foreground to be 0 for distance to foreground
+        bg_mask = ~(mask_np[b, 0] > 0)
+        if not np.any(~bg_mask):
+            # No edge pixels found
+            max_dist = math.sqrt(H**2 + W**2)
+            dist_maps.append(np.full((1, H, W), max_dist, dtype=np.float32))
             continue
             
-        ey = edge_indices[:, 0].float() # (N,)
-        ex = edge_indices[:, 1].float() # (N,)
+        dist_map = distance_transform_edt(bg_mask).astype(np.float32)
+        dist_maps.append(dist_map[np.newaxis, ...])
         
-        min_dist_sq = torch.full((down_h, down_w), float('inf'), device=device)
-        # Larger chunk size can be used due to smaller spatial resolution
-        chunk_size = 512
-        for i in range(0, len(ey), chunk_size):
-            ey_chunk = ey[i:i+chunk_size].view(-1, 1, 1) # (C, 1, 1)
-            ex_chunk = ex[i:i+chunk_size].view(-1, 1, 1) # (C, 1, 1)
-            
-            # Squared Euclidean Distance from grid to all chunk edge pixels: (C, down_h, down_w)
-            dist_sq = (grid_y.unsqueeze(0) - ey_chunk)**2 + (grid_x.unsqueeze(0) - ex_chunk)**2
-            chunk_min, _ = torch.min(dist_sq, dim=0) # (down_h, down_w)
-            min_dist_sq = torch.minimum(min_dist_sq, chunk_min)
-            
-        # Convert squared distance to actual distance
-        dist_map = torch.sqrt(min_dist_sq).unsqueeze(0)
-        
-        # Scale distance values back to match the original image coordinates scale
-        if H != down_h:
-            dist_map = dist_map * (H / down_h)
-            
-        dist_maps.append(dist_map)
-        
-    dist_maps_tensor = torch.stack(dist_maps, dim=0) # (B, 1, down_h, down_w)
-    
-    if H != down_h or W != down_w:
-        dist_maps_tensor = F.interpolate(dist_maps_tensor, size=(H, W), mode='bilinear', align_corners=False)
-        
+    dist_maps_tensor = torch.tensor(np.stack(dist_maps, axis=0), device=device)
     return dist_maps_tensor
 
 def extract_edges_and_distances(targets, images):
@@ -154,6 +118,44 @@ def extract_edges_and_distances(targets, images):
     C_hat = (C_hat - C_hat_min) / (C_hat_max - C_hat_min + 1e-8)
     
     return C_s, C_hat
+
+# --- 3D Volumetric Evaluation Helpers ---
+
+# Physical voxel spacing (D, H, W) in mm for each dataset
+SPACING_MM = {
+    'lumbar_mri': (3.0, 0.586, 0.586),   # (slice_thickness, pixel_y, pixel_x)
+    'verse19': (1.0, 1.0, 1.0),           # isotropic 1mm (resampled)
+    'verse20': (1.0, 1.0, 1.0),           # isotropic 1mm (resampled)
+}
+
+def get_boundary_3d(mask):
+    """Extract surface boundary of a 3D binary mask via erosion."""
+    from scipy.ndimage import binary_erosion
+    eroded = binary_erosion(mask)
+    return mask ^ eroded
+
+def compute_3d_hd95(mask_pred, mask_true, spacing=(1.0, 1.0, 1.0)):
+    """Compute 3D 95th-percentile Hausdorff Distance in physical mm."""
+    from scipy.ndimage import distance_transform_edt
+    if np.sum(mask_pred) == 0 or np.sum(mask_true) == 0:
+        return np.nan
+    b_pred = get_boundary_3d(mask_pred)
+    b_true = get_boundary_3d(mask_true)
+    if np.sum(b_pred) == 0 or np.sum(b_true) == 0:
+        return np.nan
+    dt_true = distance_transform_edt(~b_true, sampling=spacing)
+    dt_pred = distance_transform_edt(~b_pred, sampling=spacing)
+    hd95_to_true = np.percentile(dt_true[b_pred], 95)
+    hd95_to_pred = np.percentile(dt_pred[b_true], 95)
+    return max(hd95_to_true, hd95_to_pred)
+
+def get_slice_sort_key(fname, dataset_name):
+    """Extract slice index from filename for correct 3D volume ordering."""
+    if dataset_name == 'lumbar_mri':
+        match = re.search(r'_D(\d+)\.png', fname)
+    else:
+        match = re.search(r'_slice(\d+)\.png', fname)
+    return int(match.group(1)) if match else 0
 
 def generate_simulated_spine_slice(batch_size, height, width, device):
     """
@@ -325,6 +327,7 @@ def main():
     parser.add_argument("--max_steps", type=int, default=None, help="Maximum number of steps per epoch for fast verification")
     parser.add_argument("--base_channels", type=int, default=32, help="Number of base channels for U-ResNet (default: 32)")
     parser.add_argument("--checkpoint_path", type=str, default=None, help="Path to save the best model weights checkpoint (e.g. best_model.pt)")
+    parser.add_argument("--min_epochs", type=int, default=20, help="Minimum epochs before early stopping can trigger (default: 20)")
     args = parser.parse_args()
 
     device = verify_gpu()
@@ -341,11 +344,12 @@ def main():
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  Total Parameters: {total_params:,}")
     print(f"  Trainable Parameters: {trainable_params:,}")
-    print(f"  Target Parameter Count: ~14.5M (when base_channels=64, base_channels=32 is ~3.6M)")
+    print(f"  Target Parameter Count: ~14.5M (achieved when base_channels=42)")
     
     # 2. Initialize SpineLoss
     criterion = SpineLoss(gamma=0.5, lambda_density=1.5, lambda_boundary=1.5)
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    scaler = torch.cuda.amp.GradScaler()
 
     if args.dataset == "simulated":
         check_dataset_paths()
@@ -406,9 +410,10 @@ def main():
         print(f"TRAINING ON REAL DATASET: {args.dataset.upper()}")
         print("-" * 50)
         
-        train_loader, val_loader = get_dataloaders(args.dataset, args.data_dir, batch_size=args.batch_size)
+        train_loader, val_loader = get_dataloaders(args.dataset, args.data_dir, batch_size=args.batch_size, val_return_filename=True)
         
         best_val_dice = -1.0
+        best_val_hd = float('inf')
         epochs_no_improve = 0
         patience = 5
         cosine_scheduler = None
@@ -446,7 +451,8 @@ def main():
                     start_step = saved_step + 1
                 
                 best_val_dice = checkpoint.get('val_dice', -1.0)
-                print(f"Successfully loaded checkpoint. Resuming from epoch {start_epoch:02d}, step {start_step} with best Val Dice: {best_val_dice:.4f}")
+                best_val_hd = checkpoint.get('val_hd', float('inf'))
+                print(f"Successfully loaded checkpoint. Resuming from epoch {start_epoch:02d}, step {start_step} with best Val Dice: {best_val_dice:.4f}, best Val HD: {best_val_hd:.2f}")
                 
                 if start_epoch >= 21:
                     cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -497,13 +503,17 @@ def main():
                 if args.max_steps is not None and step_idx >= args.max_steps:
                     break
                 images, targets = images.to(device), targets.to(device)
+                
                 C_s, C_hat = extract_edges_and_distances(targets, images)
                 
                 optimizer.zero_grad()
-                logits = model(images, C_s, C_hat)
-                loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
-                loss.backward()
-                optimizer.step()
+                with torch.cuda.amp.autocast():
+                    logits = model(images, C_s, C_hat)
+                    loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
+                
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 
                 train_loss += loss.item()
                 train_reg += loss_reg.item()
@@ -533,12 +543,14 @@ def main():
             model.eval()
             val_dice_list = []
             val_iou_list = []
-            val_hd_list = []
+            # Accumulate per-slice predictions for 3D volume reconstruction
+            patient_slices = {}  # pid -> [(slice_idx, pred_np, true_np)]
             
             with torch.no_grad():
-                for val_step_idx, (val_images, val_targets) in enumerate(val_loader):
+                for val_step_idx, batch_data in enumerate(val_loader):
                     if args.max_steps is not None and val_step_idx >= max(1, args.max_steps // 4):
                         break
+                    val_images, val_targets, val_fnames = batch_data
                     val_images, val_targets = val_images.to(device), val_targets.to(device)
                     val_C_s, val_C_hat = extract_edges_and_distances(val_targets, val_images)
                     
@@ -546,9 +558,8 @@ def main():
                     val_probs = F.softmax(val_logits, dim=1)
                     val_preds = torch.argmax(val_probs, dim=1)
                     
-                    # Compute Dice and IoU
+                    # Compute Dice and IoU (unchanged — per-slice is fine for DSC)
                     for c in [1, 2]:
-                        # Skip class 2 (discs) if verse since it doesn't exist
                         if args.dataset.startswith("verse") and c == 2:
                             continue
                         pred_c = (val_preds == c)
@@ -563,39 +574,66 @@ def main():
                             iou = intersection / (union + 1e-8)
                             val_dice_list.append(dice.item())
                             val_iou_list.append(iou.item())
-                            
-                    # Compute Hausdorff Distance
-                    # Edge mapping
-                    val_pred_boundary = (F.max_pool2d((val_preds > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1) -
-                                         -F.max_pool2d(-(val_preds > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1)) > 0.5
-                    val_target_boundary = (F.max_pool2d((val_targets > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1) -
-                                           -F.max_pool2d(-(val_targets > 0).float().unsqueeze(1), kernel_size=3, stride=1, padding=1)) > 0.5
                     
+                    # Accumulate predictions per patient for 3D HD
+                    val_preds_np = val_preds.cpu().numpy()
+                    val_targets_np = val_targets.cpu().numpy()
                     for b in range(val_images.shape[0]):
-                        pb = val_pred_boundary[b, 0]
-                        tb = val_target_boundary[b, 0]
-                        
-                        if pb.sum() > 0 and tb.sum() > 0:
-                            dist_t = compute_distance_map_pytorch(tb.unsqueeze(0).unsqueeze(0)).squeeze()
-                            dist_p = compute_distance_map_pytorch(pb.unsqueeze(0).unsqueeze(0)).squeeze()
-                            hd_t = torch.quantile(dist_t[pb].float(), 0.95).item()
-                            hd_p = torch.quantile(dist_p[tb].float(), 0.95).item()
-                            val_hd_list.append(max(hd_t, hd_p))
-                            
+                        fname = val_fnames[b]
+                        pid = fname.split("_")[0]
+                        slice_idx = get_slice_sort_key(fname, args.dataset)
+                        if pid not in patient_slices:
+                            patient_slices[pid] = []
+                        patient_slices[pid].append((slice_idx, val_preds_np[b], val_targets_np[b]))
+            
+            # Compute 3D volumetric 95% HD per patient (subsample for speed)
+            spacing = SPACING_MM.get(args.dataset, (1.0, 1.0, 1.0))
+            all_pids = sorted(patient_slices.keys())
+            max_patients_for_hd = 10
+            if len(all_pids) > max_patients_for_hd:
+                np.random.seed(epoch)  # deterministic per epoch but varies across epochs
+                selected_pids = list(np.random.choice(all_pids, max_patients_for_hd, replace=False))
+            else:
+                selected_pids = all_pids
+            
+            patient_hd_list = []
+            for pid in selected_pids:
+                slices = sorted(patient_slices[pid], key=lambda x: x[0])
+                pred_vol = np.stack([s[1] for s in slices], axis=0)  # (D, H, W)
+                true_vol = np.stack([s[2] for s in slices], axis=0)
+                hd = compute_3d_hd95(pred_vol > 0, true_vol > 0, spacing=spacing)
+                if not np.isnan(hd):
+                    patient_hd_list.append(hd)
+            
             mean_dice = np.mean(val_dice_list) if val_dice_list else 0.0
             mean_iou = np.mean(val_iou_list) if val_iou_list else 0.0
-            mean_hd = np.mean(val_hd_list) if val_hd_list else 0.0
+            mean_hd = np.mean(patient_hd_list) if patient_hd_list else 0.0
             
-            print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val HD: {mean_hd:.2f} px")
+            print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val 3D-HD95: {mean_hd:.2f} mm ({len(selected_pids)} patients)")
             
             # Step the cosine scheduler if active
             if cosine_scheduler is not None:
                 cosine_scheduler.step()
                 
-            # Checkpoint & Early Stopping
-            if mean_dice > best_val_dice:
+            # Checkpoint & Early Stopping (Dual-Metric: DSC + 95% HD)
+            dice_improved = mean_dice > best_val_dice
+            hd_improved = mean_hd < best_val_hd and mean_hd > 0
+            either_improved = dice_improved or hd_improved
+            
+            if dice_improved:
                 best_val_dice = mean_dice
+            if hd_improved:
+                best_val_hd = mean_hd
+            
+            if either_improved:
                 epochs_no_improve = 0
+                improve_reasons = []
+                if dice_improved:
+                    improve_reasons.append(f"DSC: {best_val_dice:.4f}")
+                if hd_improved:
+                    improve_reasons.append(f"HD: {best_val_hd:.2f}")
+                print(f"[Checkpoint] Metric improved ({', '.join(improve_reasons)})")
+                
                 if args.checkpoint_path:
                     ckpt_dict = {
                         'epoch': epoch,
@@ -604,18 +642,21 @@ def main():
                         'optimizer_state_dict': optimizer.state_dict(),
                         'val_dice': best_val_dice,
                         'val_iou': mean_iou,
-                        'val_hd': mean_hd
+                        'val_hd': best_val_hd
                     }
                     torch.save(ckpt_dict, args.checkpoint_path)
                     if temp_checkpoint_path:
                         torch.save(ckpt_dict, temp_checkpoint_path)
-                    print(f"[Checkpoint] Saved best model to {args.checkpoint_path} (Val Dice: {best_val_dice:.4f})")
+                    print(f"[Checkpoint] Saved best model to {args.checkpoint_path} (Val Dice: {best_val_dice:.4f}, Val HD: {best_val_hd:.2f})")
             else:
-                epochs_no_improve += 1
-                print(f"[Early Stopping] Validation Dice did not improve. Count: {epochs_no_improve}/{patience}")
-                if epochs_no_improve >= patience:
-                    print(f"[Early Stopping] Validation Dice did not improve for {patience} straight epochs. Stopping training.")
-                    break
+                if epoch >= args.min_epochs:
+                    epochs_no_improve += 1
+                    print(f"[Early Stopping] Neither DSC nor HD improved. Count: {epochs_no_improve}/{patience} (epoch {epoch}/{args.epochs})")
+                    if epochs_no_improve >= patience:
+                        print(f"[Early Stopping] No improvement in either metric for {patience} consecutive epochs after min_epochs={args.min_epochs}. Stopping.")
+                        break
+                else:
+                    print(f"[Info] No improvement, but epoch {epoch} < min_epochs={args.min_epochs}. Continuing.")
             
             # Reset start_step for the next epoch
             start_step = 0
@@ -625,7 +666,7 @@ def main():
         with torch.no_grad():
             # Get one batch from validation
             val_iter = iter(val_loader)
-            images, targets = next(val_iter)
+            images, targets, _ = next(val_iter)
             images, targets = images.to(device), targets.to(device)
             C_s, C_hat = extract_edges_and_distances(targets, images)
             logits = model(images, C_s, C_hat)

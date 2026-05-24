@@ -12,10 +12,11 @@ class VerSeDataset(Dataset):
       - 0: Background
       - 1: Vertebrae
     """
-    def __init__(self, data_dir, target_size=(512, 512), file_list=None):
+    def __init__(self, data_dir, target_size=(512, 512), file_list=None, return_filename=False):
         self.images_dir = os.path.join(data_dir, "images")
         self.labels_dir = os.path.join(data_dir, "labels")
         self.target_size = target_size
+        self.return_filename = return_filename
         
         if file_list is not None:
             self.filenames = file_list
@@ -48,6 +49,8 @@ class VerSeDataset(Dataset):
         img_tensor = torch.tensor(img_np, dtype=torch.float32).unsqueeze(0)  # (1, 512, 512)
         seg_tensor = torch.tensor(lbl_np, dtype=torch.long)  # (512, 512)
         
+        if self.return_filename:
+            return img_tensor, seg_tensor, fname
         return img_tensor, seg_tensor
 
 
@@ -60,10 +63,11 @@ class LumbarMriDataset(Dataset):
       - 50  -> 2 (Intervertebral Discs)
       - Other values (e.g. 250 background) -> 0 (Background)
     """
-    def __init__(self, data_dir, target_size=(512, 512), file_list=None):
+    def __init__(self, data_dir, target_size=(512, 512), file_list=None, return_filename=False):
         self.images_dir = os.path.join(data_dir, "lumbar_mri", "images")
         self.labels_dir = os.path.join(data_dir, "lumbar_mri", "labels")
         self.target_size = target_size
+        self.return_filename = return_filename
         
         # Get matching image and label file names
         if file_list is not None:
@@ -108,10 +112,12 @@ class LumbarMriDataset(Dataset):
         img_tensor = torch.tensor(img_np, dtype=torch.float32).unsqueeze(0)  # (1, 512, 512)
         seg_tensor = torch.tensor(mapped_lbl, dtype=torch.long)  # (512, 512)
         
+        if self.return_filename:
+            return img_tensor, seg_tensor, fname
         return img_tensor, seg_tensor
 
 
-def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
+def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8, val_return_filename=False):
     """
     Helper function to instantiate the datasets and return train and validation Dataloaders.
     """
@@ -146,7 +152,7 @@ def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
         val_files = [f for f in all_files if f.split("_")[0] in val_pids]
         
         train_dataset = VerSeDataset(dataset_path, file_list=train_files)
-        val_dataset = VerSeDataset(dataset_path, file_list=val_files)
+        val_dataset = VerSeDataset(dataset_path, file_list=val_files, return_filename=val_return_filename)
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
@@ -177,7 +183,7 @@ def get_dataloaders(dataset_name, data_dir, batch_size=2, train_val_split=0.8):
         val_files = [f for f in all_files if f.split("_")[0] in val_pids]
         
         train_dataset = LumbarMriDataset(data_dir, file_list=train_files)
-        val_dataset = LumbarMriDataset(data_dir, file_list=val_files)
+        val_dataset = LumbarMriDataset(data_dir, file_list=val_files, return_filename=val_return_filename)
         
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4, pin_memory=True)
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
