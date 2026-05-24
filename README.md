@@ -608,7 +608,7 @@ All training runs are executed using the official hyperparameters noted in the p
 | :--- | :---: | :---: | :---: | :---: | :--- | :---: |
 | **Mendeley Lumbar MRI** | 20 | 0.9630 | 0.9294 | 5.47 px | `best_model_lumbar_mri.pt` | Completed |
 | **VerSe '19 CT** | 7 | 0.8842 | 0.8175 | 21.81 px | `best_model_verse19.pt` | Completed |
-| **VerSe '20 CT** | 7 | 0.9116 | 0.8542 | 10.61 px | `best_model_verse20.pt` | Running |
+| **VerSe '20 CT** | 7 | 0.9116 | 0.8542 | 10.61 px | `best_model_verse20.pt` | Completed |
 
 ---
 
