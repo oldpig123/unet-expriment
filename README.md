@@ -618,7 +618,7 @@ All training runs are executed using the official hyperparameters noted in the p
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Mendeley Lumbar MRI** | Run 2 (`ch=42`, 14.5M) | 35 | 0.9633 | 0.9297 | 0.18 mm | ✅ Completed |
 | **VerSe '19 CT** | Run 2 (`ch=42`, 14.5M) | 4/50 | 0.8785 | 0.8098 | 14.07 mm | 🔄 Training |
-| **VerSe '20 CT** | Run 2 (`ch=42`, 14.5M) | 1/50 | 0.8951 | 0.8295 | 10.96 mm | 🔄 Training |
+| **VerSe '20 CT** | Run 2 (`ch=42`, 14.5M) | 2/50 | 0.8990 | 0.8363 | 8.48 mm | 🔄 Training |
 
 ---
 
@@ -692,7 +692,7 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | **Run 1 (V19)** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | VerSe '19 | Vertebrae (Combined) | **0.8842** (Epoch 7) | **21.81 px** (21.81 mm, 2D) |
 | **Run 1 (V20)** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | **0.9116** (Epoch 7) | **10.61 px** (10.61 mm, 2D) |
 | **Run 2 (V19)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '19 | Vertebrae (Combined) | **0.8785** (Epoch 4, 🔄 training) | **14.07 mm** (3D-HD95) |
-| **Run 2 (V20)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | **0.8951** (Epoch 1, 🔄 training) | **10.96 mm** (3D-HD95) |
+| **Run 2 (V20)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | **0.8990** (Epoch 2, 🔄 training) | **8.48 mm** (3D-HD95) |
 
 *Note: In our implementation, we formulate vertebrae segmentation as a binary task (Vertebrae vs. Background) to verify the backbone, shape-aware attention, and loss components. Hence, we report a single combined Vertebrae Val Dice. For the VerSe dataset, the CT resolution is isotropic at 1.0 mm/voxel. Run 1 HD is 2D slice-level in pixels (1 px = 1 mm for CT). Run 2 HD is 3D patient-level in mm. Run 2 is currently in progress; values will be updated upon completion.*
 
