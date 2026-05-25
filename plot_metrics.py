@@ -18,20 +18,35 @@ plt.rcParams.update({
     'axes.facecolor': '#f8f9fa'
 })
 
-def parse_log_file(filepath):
+# --- Colors ---
+# Run 1 uses muted/lighter tones, Run 2 uses vivid tones
+COLORS_R1 = {'loss': '#e88e93', 'dice': '#6eaafc', 'iou': '#5fbf8a', 'hd': '#a98bd4'}
+COLORS_R2 = {'loss': '#dc3545', 'dice': '#0d6efd', 'iou': '#198754', 'hd': '#6f42c1'}
+
+
+def parse_log_file(filepath, hd_pattern_type='v2'):
     """
     Parses training metrics from a log file.
     Keeps only the latest metrics for each epoch to handle resumes.
+    
+    hd_pattern_type:
+        'v1' — old format: "Val HD: X.XX px"
+        'v2' — new format: "Val 3D-HD95: X.XX mm (N patients)"
     """
     epoch_dict = {}
     
     if not os.path.exists(filepath):
         print(f"[Warning] Log file not found: {filepath}")
         return [], [], [], [], []
-        
-    pattern = re.compile(
-        r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
-    )
+    
+    if hd_pattern_type == 'v1':
+        pattern = re.compile(
+            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
+        )
+    else:
+        pattern = re.compile(
+            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+3D-HD95:\s*([\d.]+)\s*mm"
+        )
     
     with open(filepath, 'r') as f:
         for line in f:
@@ -52,153 +67,207 @@ def parse_log_file(filepath):
     
     return epochs, losses, dices, ious, hds
 
-def plot_learning_curves(epochs, losses, dices, ious, hds, title, output_path):
-    if not epochs:
-        print(f"[Info] No epochs to plot for {title}")
+
+def plot_overlay_curves(r1_data, r2_data, title, output_path):
+    """
+    Plots 4-panel learning curves with Run 1 (dashed) and Run 2 (solid) overlaid.
+    HD panel uses dual y-axes since Run 1 is in px and Run 2 is in mm.
+    
+    r1_data / r2_data: tuple of (epochs, losses, dices, ious, hds) or None
+    """
+    has_r1 = r1_data is not None and len(r1_data[0]) > 0
+    has_r2 = r2_data is not None and len(r2_data[0]) > 0
+    
+    if not has_r1 and not has_r2:
+        print(f"[Info] No data to plot for {title}")
         return
-        
+    
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle(f"U-ResNet + SAAM Learning Curves: {title}", weight='bold', y=0.98)
     
-    # 1. Training Loss
-    axes[0, 0].plot(epochs, losses, color='#dc3545', linewidth=2.5, marker='o', markersize=4, label='SpineLoss')
-    axes[0, 0].set_title('Training Loss Curve', weight='semibold')
-    axes[0, 0].set_xlabel('Epoch')
-    axes[0, 0].set_ylabel('Loss')
-    axes[0, 0].legend()
+    # --- 1. Training Loss ---
+    ax = axes[0, 0]
+    if has_r1:
+        ax.plot(r1_data[0], r1_data[1], color=COLORS_R1['loss'], linewidth=2,
+                linestyle='--', marker='o', markersize=3, alpha=0.8,
+                label='Run 1 (ch=32, 8.57M)')
+    if has_r2:
+        ax.plot(r2_data[0], r2_data[1], color=COLORS_R2['loss'], linewidth=2.5,
+                marker='o', markersize=4,
+                label='Run 2 (ch=42, 14.5M)')
+    ax.set_title('Training Loss Curve', weight='semibold')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.legend(fontsize=9)
     
-    # 2. Validation Dice
-    axes[0, 1].plot(epochs, dices, color='#0d6efd', linewidth=2.5, marker='s', markersize=4, label='Dice Coefficient')
-    axes[0, 1].set_title('Validation Dice Score', weight='semibold')
-    axes[0, 1].set_xlabel('Epoch')
-    axes[0, 1].set_ylabel('Dice')
-    axes[0, 1].set_ylim(0.0, 1.0)
-    axes[0, 1].legend()
+    # --- 2. Validation Dice ---
+    ax = axes[0, 1]
+    if has_r1:
+        ax.plot(r1_data[0], r1_data[2], color=COLORS_R1['dice'], linewidth=2,
+                linestyle='--', marker='s', markersize=3, alpha=0.8,
+                label='Run 1 (ch=32, 8.57M)')
+    if has_r2:
+        ax.plot(r2_data[0], r2_data[2], color=COLORS_R2['dice'], linewidth=2.5,
+                marker='s', markersize=4,
+                label='Run 2 (ch=42, 14.5M)')
+    ax.set_title('Validation Dice Score', weight='semibold')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Dice')
+    ax.set_ylim(0.0, 1.0)
+    ax.legend(fontsize=9)
     
-    # 3. Validation IoU
-    axes[1, 0].plot(epochs, ious, color='#198754', linewidth=2.5, marker='^', markersize=4, label='IoU (Jaccard Index)')
-    axes[1, 0].set_title('Validation Intersection over Union (IoU)', weight='semibold')
-    axes[1, 0].set_xlabel('Epoch')
-    axes[1, 0].set_ylabel('IoU')
-    axes[1, 0].set_ylim(0.0, 1.0)
-    axes[1, 0].legend()
+    # --- 3. Validation IoU ---
+    ax = axes[1, 0]
+    if has_r1:
+        ax.plot(r1_data[0], r1_data[3], color=COLORS_R1['iou'], linewidth=2,
+                linestyle='--', marker='^', markersize=3, alpha=0.8,
+                label='Run 1 (ch=32, 8.57M)')
+    if has_r2:
+        ax.plot(r2_data[0], r2_data[3], color=COLORS_R2['iou'], linewidth=2.5,
+                marker='^', markersize=4,
+                label='Run 2 (ch=42, 14.5M)')
+    ax.set_title('Validation Intersection over Union (IoU)', weight='semibold')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('IoU')
+    ax.set_ylim(0.0, 1.0)
+    ax.legend(fontsize=9)
     
-    # 4. Validation HD
-    axes[1, 1].plot(epochs, hds, color='#6f42c1', linewidth=2.5, marker='d', markersize=4, label='Hausdorff Distance')
-    axes[1, 1].set_title('Validation Hausdorff Distance (HD)', weight='semibold')
-    axes[1, 1].set_xlabel('Epoch')
-    axes[1, 1].set_ylabel('HD (pixels)')
-    axes[1, 1].legend()
+    # --- 4. Validation HD (dual y-axis) ---
+    ax = axes[1, 1]
+    lines = []
+    labels = []
+    if has_r1:
+        l1, = ax.plot(r1_data[0], r1_data[4], color=COLORS_R1['hd'], linewidth=2,
+                       linestyle='--', marker='d', markersize=3, alpha=0.8)
+        ax.set_ylabel('HD — Run 1 (2D, pixels)', color=COLORS_R1['hd'], weight='semibold')
+        ax.tick_params(axis='y', labelcolor=COLORS_R1['hd'])
+        lines.append(l1)
+        labels.append('Run 1 HD (2D px)')
+    
+    if has_r2:
+        if has_r1:
+            ax2 = ax.twinx()
+        else:
+            ax2 = ax
+        l2, = ax2.plot(r2_data[0], r2_data[4], color=COLORS_R2['hd'], linewidth=2.5,
+                        marker='d', markersize=4)
+        ax2.set_ylabel('HD — Run 2 (3D-HD95, mm)', color=COLORS_R2['hd'], weight='semibold')
+        ax2.tick_params(axis='y', labelcolor=COLORS_R2['hd'])
+        lines.append(l2)
+        labels.append('Run 2 HD (3D mm)')
+    
+    ax.set_title('Validation Hausdorff Distance', weight='semibold')
+    ax.set_xlabel('Epoch')
+    ax.legend(lines, labels, fontsize=9, loc='upper right')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"[Info] Saved learning curves to: {output_path}")
+    print(f"[Info] Saved overlay learning curves to: {output_path}")
+
 
 def plot_comparison_chart(results, output_path):
     """
-    Plots a bar chart comparing performance metrics across datasets.
+    Plots a grouped bar chart comparing Run 1 vs Run 2 performance across datasets.
     """
     datasets = list(results.keys())
-    dices = [results[d]['best_dice'] for d in datasets]
-    ious = [results[d]['best_iou'] for d in datasets]
-    hds = [results[d]['best_hd'] for d in datasets]
+    
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+    fig.suptitle("Dataset Performance Comparison — Run 1 vs Run 2", weight='bold', y=0.98)
     
     x = np.arange(len(datasets))
-    width = 0.25
+    width = 0.18
     
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-    fig.suptitle("Dataset Performance Comparison (Best Validation Metrics)", weight='bold', y=0.98)
+    # Extract values per run
+    r1_dices = [results[d].get('r1_dice', 0) for d in datasets]
+    r1_ious = [results[d].get('r1_iou', 0) for d in datasets]
+    r2_dices = [results[d].get('r2_dice', 0) for d in datasets]
+    r2_ious = [results[d].get('r2_iou', 0) for d in datasets]
     
-    # Left axis for Dice and IoU
-    rects1 = ax1.bar(x - width/2, dices, width, label='Best Val Dice', color='#0d6efd')
-    rects2 = ax1.bar(x + width/2, ious, width, label='Val IoU', color='#198754')
+    # Bars
+    ax1.bar(x - 1.5*width, r1_dices, width, label='Run 1 Dice', color='#6eaafc', edgecolor='#0d6efd', linewidth=0.8)
+    ax1.bar(x - 0.5*width, r1_ious, width, label='Run 1 IoU', color='#5fbf8a', edgecolor='#198754', linewidth=0.8)
+    ax1.bar(x + 0.5*width, r2_dices, width, label='Run 2 Dice', color='#0d6efd')
+    ax1.bar(x + 1.5*width, r2_ious, width, label='Run 2 IoU', color='#198754')
+    
     ax1.set_ylabel('Score (Dice / IoU)', weight='semibold')
-    ax1.set_ylim(0, 1.05)
+    ax1.set_ylim(0, 1.08)
     ax1.set_xticks(x)
     ax1.set_xticklabels(datasets, weight='semibold')
     
-    # Right axis for HD
-    ax2 = ax1.twinx()
-    rects3 = ax2.plot(x, hds, color='#dc3545', marker='o', markersize=8, linewidth=2.5, label='Val HD (px)')
-    ax2.set_ylabel('Hausdorff Distance (pixels)', color='#dc3545', weight='semibold')
-    ax2.tick_params(axis='y', labelcolor='#dc3545')
-    ax2.set_ylim(0, max(hds + [50]) * 1.2)
+    # Annotate each bar
+    for bars in [ax1.containers[i] for i in range(4)]:
+        for rect in bars:
+            h = rect.get_height()
+            if h > 0:
+                ax1.annotate(f'{h:.4f}',
+                             xy=(rect.get_x() + rect.get_width() / 2, h),
+                             xytext=(0, 3), textcoords="offset points",
+                             ha='center', va='bottom', fontsize=7.5, weight='bold')
     
-    # Legend construction
-    lines, labels = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines + lines2, labels + labels2, loc='upper left')
+    ax1.legend(loc='lower right', fontsize=9, ncol=2)
     
-    # Annotate bars with values
-    for rect in rects1:
-        height = rect.get_height()
-        if height > 0:
-            ax1.annotate(f'{height:.4f}',
-                        xy=(rect.get_x() + rect.get_width() / 2, height),
-                        xytext=(0, 3),  # 3 points vertical offset
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontsize=9, weight='bold')
-                        
-    for rect in rects2:
-        height = rect.get_height()
-        if height > 0:
-            ax1.annotate(f'{height:.4f}',
-                        xy=(rect.get_x() + rect.get_width() / 2, height),
-                        xytext=(0, 3),  # 3 points vertical offset
-                        textcoords="offset points",
-                        ha='center', va='bottom', fontsize=9, weight='bold')
-                        
-    for i, hd_val in enumerate(hds):
-        if hd_val > 0:
-            ax2.annotate(f'{hd_val:.2f} px',
-                        xy=(i, hd_val),
-                        xytext=(0, 10),
-                        textcoords="offset points",
-                        ha='center', va='bottom', color='#dc3545', fontsize=9, weight='bold')
-
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
     print(f"[Info] Saved comparison bar chart to: {output_path}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Parse training log files and plot metrics.")
     parser.add_argument("--log_dir", type=str, default=".", help="Tasks logs directory")
     args = parser.parse_args()
     
-    # Task log filenames
-    logs = {
-        'Mendeley Lumbar MRI': os.path.join(args.log_dir, 'mri_train.log'),
-        'VerSe 19 CT': os.path.join(args.log_dir, 'verse19_train.log'),
-        'VerSe 20 CT': os.path.join(args.log_dir, 'verse20_train.log'),
-    }
+    # Dataset configs: (display_name, run1_log, run2_log, output_png)
+    datasets = [
+        ('Mendeley Lumbar MRI',
+         os.path.join(args.log_dir, 'mri_train.log'),
+         os.path.join(args.log_dir, 'mri_train_v6.log'),
+         'mendeley_lumbar_mri_curves.png'),
+        ('VerSe 19 CT',
+         os.path.join(args.log_dir, 'verse19_train.log'),
+         os.path.join(args.log_dir, 'verse19_train_v6.log'),
+         'verse_19_ct_curves.png'),
+        ('VerSe 20 CT',
+         os.path.join(args.log_dir, 'verse20_train.log'),
+         os.path.join(args.log_dir, 'verse20_train_v6.log'),
+         'verse_20_ct_curves.png'),
+    ]
     
-    results = {}
+    comparison_results = {}
     
-    for dataset_name, log_path in logs.items():
-        print(f"Parsing {dataset_name} log from: {log_path}")
-        epochs, losses, dices, ious, hds = parse_log_file(log_path)
+    for name, r1_log, r2_log, out_png in datasets:
+        print(f"Parsing {name}...")
         
-        if epochs:
-            # Save individual learning curves
-            out_name = dataset_name.lower().replace(' ', '_') + '_curves.png'
-            plot_learning_curves(epochs, losses, dices, ious, hds, dataset_name, out_name)
-            
-            # Find best metrics (based on Dice score)
-            best_idx = np.argmax(dices)
-            results[dataset_name] = {
-                'best_dice': dices[best_idx],
-                'best_iou': ious[best_idx],
-                'best_hd': hds[best_idx]
-            }
-        else:
-            print(f"No metric data found/parsed for {dataset_name}")
-            
-    if results:
-        plot_comparison_chart(results, 'dataset_comparison_chart.png')
+        # Parse Run 1 (old format: Val HD: X.XX px)
+        r1 = parse_log_file(r1_log, hd_pattern_type='v1')
+        # Parse Run 2 (new format: Val 3D-HD95: X.XX mm)
+        r2 = parse_log_file(r2_log, hd_pattern_type='v2')
+        
+        r1_data = r1 if r1[0] else None
+        r2_data = r2 if r2[0] else None
+        
+        # Plot overlay curves
+        plot_overlay_curves(r1_data, r2_data, name, out_png)
+        
+        # Collect comparison data
+        entry = {}
+        if r1_data:
+            best_idx = np.argmax(r1_data[2])  # best Dice
+            entry['r1_dice'] = r1_data[2][best_idx]
+            entry['r1_iou'] = r1_data[3][best_idx]
+        if r2_data:
+            best_idx = np.argmax(r2_data[2])
+            entry['r2_dice'] = r2_data[2][best_idx]
+            entry['r2_iou'] = r2_data[3][best_idx]
+        if entry:
+            comparison_results[name] = entry
+    
+    if comparison_results:
+        plot_comparison_chart(comparison_results, 'dataset_comparison_chart.png')
     else:
-        print("[Warning] No training data successfully parsed; comparison chart was not generated.")
+        print("[Warning] No training data successfully parsed.")
+
 
 if __name__ == "__main__":
     main()

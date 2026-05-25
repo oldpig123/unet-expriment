@@ -11,9 +11,9 @@ README_PATH = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments
 WORKSPACE_DIR = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet"
 
 LOG_FILES = {
-    'mri': os.path.join(WORKSPACE_DIR, 'mri_train.log'),
-    'v19': os.path.join(WORKSPACE_DIR, 'verse19_train.log'),
-    'v20': os.path.join(WORKSPACE_DIR, 'verse20_train.log'),
+    'mri': os.path.join(WORKSPACE_DIR, 'mri_train_v6.log'),
+    'v19': os.path.join(WORKSPACE_DIR, 'verse19_train_v6.log'),
+    'v20': os.path.join(WORKSPACE_DIR, 'verse20_train_v6.log'),
 }
 
 def is_dataset_running(dataset_name):
@@ -52,7 +52,7 @@ def parse_best_metrics(filepath, ckpt_path=None):
     best_log = None
     if os.path.exists(filepath):
         pattern = re.compile(
-            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+HD:\s*([\d.]+)\s*px"
+            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+3D-HD95:\s*([\d.]+)\s*mm"
         )
         
         epochs = []
@@ -78,14 +78,22 @@ def parse_best_metrics(filepath, ckpt_path=None):
                 'hd': hds[best_idx]
             }
 
-    # Compare and return the one with the higher dice score.
-    # Prefer the log result when dice is equal, since it has complete metrics (iou, hd).
+    # Compare and return the one with the higher dice score (rounded to 4 decimals).
+    # If rounded dice is equal, prefer the one with the lower Hausdorff Distance.
     res = None
     if best_ckpt and best_log:
-        if best_ckpt['dice'] > best_log['dice'] and best_ckpt.get('iou', 0.0) > 0.0:
+        ckpt_dice_rnd = round(best_ckpt['dice'], 4)
+        log_dice_rnd = round(best_log['dice'], 4)
+        if ckpt_dice_rnd > log_dice_rnd:
             res = best_ckpt
-        else:
+        elif log_dice_rnd > ckpt_dice_rnd:
             res = best_log
+        else:
+            # Tiebreaker: lower HD is better
+            if best_ckpt['hd'] < best_log['hd']:
+                res = best_ckpt
+            else:
+                res = best_log
     elif best_ckpt:
         res = best_ckpt
     elif best_log:
@@ -103,41 +111,72 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
         content = f.read()
         
     # Format rows
-    def format_row(name, res, ckpt, status_key):
+    def format_row(name, res, status_key):
         is_running = running_status.get(status_key, False)
         is_real_res = res and res.get('dice', -1.0) > 0.0
         
+        config_str = "Run 2 (`ch=42`, 14.5M)"
+        
+        def format_hd(hd_val):
+            if hd_val == float('inf') or np.isinf(hd_val) or hd_val is None:
+                return "inf"
+            return f"{hd_val:.2f} mm"
+            
         if is_real_res:
-            status_str = "Running" if is_running else "Completed"
-            return f"| **{name}** | {res['epoch']} | {res['dice']:.4f} | {res['iou']:.4f} | {res['hd']:.2f} px | `{ckpt}` | {status_str} |"
+            status_str = "🔄 Training" if is_running else "✅ Completed"
+            epoch_str = f"{res['epoch']}/50" if is_running else f"{res['epoch']}"
+            return f"| **{name}** | {config_str} | {epoch_str} | {res['dice']:.4f} | {res['iou']:.4f} | {format_hd(res['hd'])} | {status_str} |"
         else:
             if is_running:
-                return f"| **{name}** | 50 | *In Progress* | *TBD* | *TBD* | `{ckpt}` | Running |"
+                return f"| **{name}** | {config_str} | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |"
             else:
-                # If VerSe 20 is not running yet but MRI is still running
-                if name == "VerSe '20 CT" and running_status.get('mri', False):
-                    return f"| **{name}** | 50 | *Queued* | *TBD* | *TBD* | `{ckpt}` | Queued |"
-                return f"| **{name}** | 50 | *N/A* | *N/A* | *N/A* | `{ckpt}` | Failed/Aborted |"
+                if name == "VerSe '20 CT" and running_status.get('v19', False):
+                    return f"| **{name}** | {config_str} | 50 | *Queued* | *TBD* | *TBD* | Queued |"
+                return f"| **{name}** | {config_str} | 50 | *N/A* | *N/A* | *N/A* | Failed/Aborted |"
 
-    mri_row = format_row("Mendeley Lumbar MRI", mri_res, "best_model_lumbar_mri.pt", 'mri')
-    v19_row = format_row("VerSe '19 CT", v19_res, "best_model_verse19.pt", 'v19')
-    v20_row = format_row("VerSe '20 CT", v20_res, "best_model_verse20.pt", 'v20')
+    mri_row = format_row("Mendeley Lumbar MRI", mri_res, 'mri')
+    v19_row = format_row("VerSe '19 CT", v19_res, 'v19')
+    v20_row = format_row("VerSe '20 CT", v20_res, 'v20')
     
     # Generate the table content
     table_pattern = re.compile(
-        r"(### Quantitative Evaluation \(Updating dynamically upon completion\):\s*\n\s*\n\| Dataset \| Epochs \| Best Val Dice \| Val IoU \| Val HD \(px\) \| Checkpoint Path \| Status \|\n\| :--- \| :---: \| :---: \| :---: \| :---: \| :--- \| :---: \|\n)(.*?)(\n\n---)",
+        r"(#### Run 2 — `base_channels=42` \(14\.5M parameters\), 3D patient-level HD95 in mm\s*\n\s*\n\| Dataset \| Config \| Epochs \| Best Val Dice \| Val IoU \| Best 3D-HD95 \| Status \|\n\| :--- \| :--- \| :---: \| :---: \| :---: \| :---: \| :---: \|\n)(.*?)(\n\n---)",
         re.DOTALL
     )
     
     new_rows = f"{mri_row}\n{v19_row}\n{v20_row}"
     
     if table_pattern.search(content):
-        updated_content = table_pattern.sub(r"\1" + new_rows + r"\3", content)
-        with open(README_PATH, 'w') as f:
-            f.write(updated_content)
+        content = table_pattern.sub(r"\1" + new_rows + r"\3", content)
         print("[Info] Table updated in README memory")
     else:
         print("[Error] Could not find matching table pattern in README.md")
+
+    # Update VerSe Comparison Table rows if they exist
+    v19_comp_pattern = re.compile(
+        r"(\| \*\*Run 2 \(V19\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '19 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
+    )
+    v20_comp_pattern = re.compile(
+        r"(\| \*\*Run 2 \(V20\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '20 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
+    )
+    
+    def format_hd(hd_val):
+        if hd_val == float('inf') or np.isinf(hd_val) or hd_val is None:
+            return "inf"
+        return f"{hd_val:.2f}"
+
+    if v19_res and v19_res.get('dice', -1.0) > 0.0:
+        v19_status = ", 🔄 training" if running_status.get('v19', False) else ""
+        v19_comp_row = f"**{v19_res['dice']:.4f}** (Epoch {v19_res['epoch']}{v19_status}) | **{format_hd(v19_res['hd'])} mm** (3D-HD95) |"
+        content = v19_comp_pattern.sub(r"\1" + v19_comp_row + r"\3", content)
+
+    if v20_res and v20_res.get('dice', -1.0) > 0.0:
+        v20_status = ", 🔄 training" if running_status.get('v20', False) else ""
+        v20_comp_row = f"**{v20_res['dice']:.4f}** (Epoch {v20_res['epoch']}{v20_status}) | **{format_hd(v20_res['hd'])} mm** (3D-HD95) |"
+        content = v20_comp_pattern.sub(r"\1" + v20_comp_row + r"\3", content)
+
+    with open(README_PATH, 'w') as f:
+        f.write(content)
 
 def has_changes_to_commit():
     target_files = [
