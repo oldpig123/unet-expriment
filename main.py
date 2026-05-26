@@ -576,8 +576,8 @@ def main():
                             val_iou_list.append(iou.item())
                     
                     # Accumulate predictions per patient for 3D HD
-                    val_preds_np = val_preds.cpu().numpy()
-                    val_targets_np = val_targets.cpu().numpy()
+                    val_preds_np = val_preds.cpu().numpy().astype(np.uint8)
+                    val_targets_np = val_targets.cpu().numpy().astype(np.uint8)
                     for b in range(val_images.shape[0]):
                         fname = val_fnames[b]
                         pid = fname.split("_")[0]
