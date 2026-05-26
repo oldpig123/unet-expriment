@@ -626,7 +626,15 @@ All training runs are executed using the official hyperparameters noted in the p
 > **Methodological Notes**:
 > * **Data Split Protocol**: For Mendeley MRI, we use a **patient-level split** (80% train / 20% validation) where all slices from a given patient are isolated in one partition, ensuring zero data leakage. For VerSe CT, the 2D slices are split at the patient (scan) level similarly.
 > * **Hausdorff Distance (HD) Formulation**: Our training pipeline computes the **95th percentile 3D Hausdorff Distance** (3D-HD95) in millimeters by reconstructing patient-level 3D volumes from 2D slice predictions and measuring boundary distances in physical space. This aligns with the paper's volumetric evaluation protocol. A separate 2D slice-level 95% HD evaluation is also available for reference (e.g., 5.53 px ≈ 3.24 mm for MRI). Physical spacings: MRI ~0.586 mm/px (512 px over ~300 mm FOV), CT 1.0 mm/px (isotropic 1 mm voxel spacing).
-
+> * **Standalone 3D Evaluation Script**: You can run 3D volumetric evaluation on any trained 2D model checkpoint using the standalone [evaluate_3d.py](evaluate_3d.py) script:
+>   ```bash
+>   # Run evaluation on all datasets matching the Run 2 configuration (base_channels=42)
+>   uv run python evaluate_3d.py --dataset all --base_channels 42
+>
+>   # Run on a specific dataset checkpoint
+>   uv run python evaluate_3d.py --dataset lumbar_mri --base_channels 42 --checkpoint best_model_lumbar_mri.pt
+>   ```
+> 
 ---
 
 ### Training & Validation Performance Curves
