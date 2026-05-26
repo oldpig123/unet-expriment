@@ -280,6 +280,62 @@ class ShapeAwareAttentionModule(nn.Module):
 *   **Integration**: Four SAAM modules (`saam1` to `saam4`) are integrated into each expanding decoder stage immediately following the Adaptive Skip Connection (ASC) fusion in [model.py](model.py#L342-L360).
 *   **Data Flow**: SAAM receives the fused features `d_fused`, the static shape prior distance map `C_s`, and the active contour map `C_hat`. After resizing the priors to match the stage's spatial resolution, SAAM computes the spatial attention weight map `A` (correcting for pathological shape deviations via `beta`), weights the features using `A`, applies Gaussian smoothing to the background features, and produces the final shape-attended representation `d_att` which is then passed to the decoder residual block.
 
+### F. 3D Volumetric Evaluation (Reconstruction & Physical Spacing)
+
+To accurately evaluate model performance in volumetric physical space (matching clinical diagnosis criteria and the paper's volumetric evaluation protocols), we reconstruct 3D volumes from 2D slice predictions and evaluate symmetric 3D Hausdorff Distances (3D-HD95) scaled by physical voxel dimensions.
+
+#### Code Implementation:
+
+Implemented in [evaluate_3d.py](evaluate_3d.py) and [main.py](main.py#L122-L186):
+
+```python
+def get_boundary_3d(mask):
+    """
+    Extracts the boundary surface voxels of a binary 3D volume.
+    XOR of the mask with its binary eroded version isolates outer surface voxels.
+    """
+    eroded = binary_erosion(mask)
+    return mask ^ eroded
+
+def compute_3d_hd95(mask_pred, mask_true, spacing=(1.0, 1.0, 1.0)):
+    """
+    Computes the symmetric 95th percentile 3D Hausdorff Distance in millimeters.
+    Uses exact Euclidean Distance Transforms (EDT) scaled by physical anisotropic spacing.
+    """
+    if np.sum(mask_pred) == 0 or np.sum(mask_true) == 0:
+        return np.nan
+        
+    b_pred = get_boundary_3d(mask_pred)
+    b_true = get_boundary_3d(mask_true)
+    
+    if np.sum(b_pred) == 0 or np.sum(b_true) == 0:
+        return np.nan
+        
+    # Distance transforms in physical spacing (mm)
+    dt_true = distance_transform_edt(~b_true, sampling=spacing)
+    dt_pred = distance_transform_edt(~b_pred, sampling=spacing)
+    
+    # Query distances of prediction boundaries to ground truth, and vice versa
+    distances_to_true = dt_true[b_pred]
+    distances_to_pred = dt_pred[b_true]
+    
+    # 95th percentile distance to mitigate sensitivity to outlier voxels
+    hd95_to_true = np.percentile(distances_to_true, 95)
+    hd95_to_pred = np.percentile(distances_to_pred, 95)
+    
+    # Symmetric Hausdorff Distance is the maximum of both directed distances
+    return max(hd95_to_true, hd95_to_pred)
+```
+
+#### Connection & Variable Logic:
+*   `mask_pred` and `mask_true` represent the reconstructed 3D patient volumes of shape $(D, 512, 512)$ compiled from individual slice predictions.
+*   `spacing` represents the physical dimensions of a single voxel $(s_z, s_y, s_x)$ in millimeters. Sagittal scans are highly anisotropic (e.g. slice thickness $s_z = 3.0\text{ mm}$ is much larger than in-plane pixel spacing $s_x = s_y = 0.586\text{ mm}$). Passing `sampling=spacing` to `distance_transform_edt` correctly scales the distance map calculations in 3D physical coordinates rather than voxel grid indices.
+*   `get_boundary_3d` applies a 3D structural element to erode the volume and subtracts it from the original mask using a logical XOR (`^`) to extract only the boundary voxels, saving computation.
+
+#### How it fits in:
+*   **Validation Loop Integration**: During validation in `main.py`, 2D slice predictions and labels are grouped by patient ID in a `patient_slices` dictionary. Once the validation loader completes, the slices are stacked into 3D volumes, and `compute_3d_hd95` is run (using `SPACING_MM` configs) to report 3D validation metrics in physical millimeters.
+*   **Post-Training Volumetric Verification**: After model training completes, checkpoints can be evaluated volumetric-wide on the test splits using `evaluate_3d.py`, verifying model generalization across clinical configurations.
+
 ---
 
 ## 3. Dynamically Weighted combined Loss (SpineLoss)
