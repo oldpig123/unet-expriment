@@ -688,7 +688,7 @@ All training runs are executed using the official hyperparameters noted in the p
 >      All 2D sagittal slice predictions ($512 \times 512$) for a given validation scan are grouped by patient ID (extracted from filenames, e.g. `sub-verse004_slice085.png` -> patient `sub-verse004`). The slices are then sorted in anatomical order using their slice index.
 >   2. **3D Volume Reconstruction**: 
 >      The sorted 2D prediction masks and ground-truth targets are stacked along the depth axis to form a 3D binary volume tensor of shape $(D, 512, 512)$ where $D$ is the number of slices for that patient:
->      $$\mathbf{V}_{\text{pred}} = \operatorname{stack}(\mathbf{M}_1, \mathbf{M}_2, \dots, \mathbf{M}_D)$$
+>      $$\mathbf{V}_{\text{pred}} = \text{stack}(\mathbf{M}_1, \mathbf{M}_2, \dots, \mathbf{M}_D)$$
 >   3. **Voxel Spacing Standardization (Physical mm Space)**:
 >      To compute physical distance metrics, we define the voxel grid spacing $(s_z, s_y, s_x)$ in millimeters:
 >      * **Mendeley MRI**: $s_z = 3.0\text{ mm}$ (slice thickness), $s_y = s_x = 0.586\text{ mm}$ (sagittal pixel size).
