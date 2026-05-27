@@ -678,40 +678,40 @@ All training runs are executed using the official hyperparameters noted in the p
 
 ---
 
-> [!NOTE]
-> **Methodological Notes**:
-> * **Data Split Protocol**: For Mendeley MRI, we use a **patient-level split** (80% train / 20% validation) where all slices from a given patient are isolated in one partition, ensuring zero data leakage. For VerSe CT, the 2D slices are split at the patient (scan) level similarly.
-> * **Hausdorff Distance (HD) Formulation & Detailed 3D Evaluation Workflow**:
->   To align with the paper's volumetric evaluation protocol, our 2D slice-level network predictions are evaluated using a reconstructed 3D patient volume. The step-by-step evaluation workflow is formulated as follows:
->   
->   1. **Patient-Level Slice Aggregation**: 
->      All 2D sagittal slice predictions ($512 \times 512$) for a given validation scan are grouped by patient ID (extracted from filenames, e.g. `sub-verse004_slice085.png` -> patient `sub-verse004`). The slices are then sorted in anatomical order using their slice index.
->   2. **3D Volume Reconstruction**: 
->      The sorted 2D prediction masks and ground-truth targets are stacked along the depth axis to form a 3D binary volume tensor of shape $(D, 512, 512)$ where $D$ is the number of slices for that patient:
->      $$\mathbf{V}_{\text{pred}} = \text{stack}(\mathbf{M}_1, \mathbf{M}_2, \dots, \mathbf{M}_D)$$
->   3. **Voxel Spacing Standardization (Physical mm Space)**:
->      To compute physical distance metrics, we define the voxel grid spacing $(s_z, s_y, s_x)$ in millimeters:
->      * **Mendeley MRI**: $s_z = 3.0\text{ mm}$ (slice thickness), $s_y = s_x = 0.586\text{ mm}$ (sagittal pixel size).
->      * **VerSe '19 / '20**: $s_z = s_y = s_x = 1.0\text{ mm}$ (due to isotropic resampling).
->   4. **3D Surface Boundary Extraction**:
->      The boundary voxels of the reconstructed volumes are isolated using a 3D binary erosion filter ($\ominus$) with a $3 \times 3 \times 3$ structuring element:
->      $$\partial \mathbf{V} = \mathbf{V} \setminus (\mathbf{V} \ominus \mathbf{K}_{3\times3\times3})$$
->   5. **Exact Anisotropic Euclidean Distance Transform (EDT)**:
->      We compute the exact Euclidean Distance Transform from each boundary voxel to the opposing volume's boundary. We use `scipy.ndimage.distance_transform_edt` parameterized with the physical voxel spacing:
->      $$\mathbf{D}_{\text{true}}(\mathbf{p}) = \min_{\mathbf{q} \in \partial \mathbf{V}_{\text{true}}} \|\mathbf{p} - \mathbf{q}\|_{\text{physical}}, \quad \forall \mathbf{p} \in \partial \mathbf{V}_{\text{pred}}$$
->   6. **Symmetric 95th Percentile Hausdorff Distance (3D-HD95)**:
->      The directed 95th percentile distance is computed to eliminate sensitivity to small boundary outliers. The final symmetric 3D-HD95 is the maximum of the two directed percentiles:
->      $$\text{HD95}(V_{\text{pred}}, V_{\text{true}}) = \max\left( P_{95}(\mathbf{D}_{\text{true}}(\partial \mathbf{V}_{\text{pred}})), P_{95}(\mathbf{D}_{\text{pred}}(\partial \mathbf{V}_{\text{true}})) \right)$$
-> 
-> * **Standalone 3D Evaluation Script**: You can run 3D volumetric evaluation on any trained 2D model checkpoint using the standalone [evaluate_3d.py](evaluate_3d.py) script:
->   ```bash
->   # Run evaluation on all datasets matching the Run 2 configuration (base_channels=42)
->   uv run python evaluate_3d.py --dataset all --base_channels 42
->
->   # Run on a specific dataset checkpoint
->   uv run python evaluate_3d.py --dataset lumbar_mri --base_channels 42 --checkpoint best_model_lumbar_mri.pt
->   ```
-> 
+### Methodological Notes & 3D Volumetric Evaluation Workflow
+
+* **Data Split Protocol**: For Mendeley MRI, we use a **patient-level split** (80% train / 20% validation) where all slices from a given patient are isolated in one partition, ensuring zero data leakage. For VerSe CT, the 2D slices are split at the patient (scan) level similarly.
+* **Hausdorff Distance (HD) Formulation & Detailed 3D Evaluation Workflow**:
+  To align with the paper's volumetric evaluation protocol, our 2D slice-level network predictions are evaluated using a reconstructed 3D patient volume. The step-by-step evaluation workflow is formulated as follows:
+  
+  1. **Patient-Level Slice Aggregation**: 
+     All 2D sagittal slice predictions ($512 \times 512$) for a given validation scan are grouped by patient ID (extracted from filenames, e.g. `sub-verse004_slice085.png` -> patient `sub-verse004`). The slices are then sorted in anatomical order using their slice index.
+  2. **3D Volume Reconstruction**: 
+     The sorted 2D prediction masks and ground-truth targets are stacked along the depth axis to form a 3D binary volume tensor of shape $(D, 512, 512)$ where $D$ is the number of slices for that patient:
+     $$\mathbf{V}_{\text{pred}} = \text{stack}(\mathbf{M}_1, \mathbf{M}_2, \dots, \mathbf{M}_D)$$
+  3. **Voxel Spacing Standardization (Physical mm Space)**:
+     To compute physical distance metrics, we define the voxel grid spacing $(s_z, s_y, s_x)$ in millimeters:
+     * **Mendeley MRI**: $s_z = 3.0\text{ mm}$ (slice thickness), $s_y = s_x = 0.586\text{ mm}$ (sagittal pixel size).
+     * **VerSe '19 / '20**: $s_z = s_y = s_x = 1.0\text{ mm}$ (due to isotropic resampling).
+  4. **3D Surface Boundary Extraction**:
+     The boundary voxels of the reconstructed volumes are isolated using a 3D binary erosion filter ($\ominus$) with a $3 \times 3 \times 3$ structuring element:
+     $$\partial \mathbf{V} = \mathbf{V} \setminus (\mathbf{V} \ominus \mathbf{K}_{3\times3\times3})$$
+  5. **Exact Anisotropic Euclidean Distance Transform (EDT)**:
+     We compute the exact Euclidean Distance Transform from each boundary voxel to the opposing volume's boundary. We use `scipy.ndimage.distance_transform_edt` parameterized with the physical voxel spacing:
+     $$\mathbf{D}_{\text{true}}(\mathbf{p}) = \min_{\mathbf{q} \in \partial \mathbf{V}_{\text{true}}} \|\mathbf{p} - \mathbf{q}\|_{\text{physical}}, \quad \forall \mathbf{p} \in \partial \mathbf{V}_{\text{pred}}$$
+  6. **Symmetric 95th Percentile Hausdorff Distance (3D-HD95)**:
+     The directed 95th percentile distance is computed to eliminate sensitivity to small boundary outliers. The final symmetric 3D-HD95 is the maximum of the two directed percentiles:
+     $$\text{HD95}(V_{\text{pred}}, V_{\text{true}}) = \max\left( P_{95}(\mathbf{D}_{\text{true}}(\partial \mathbf{V}_{\text{pred}})), P_{95}(\mathbf{D}_{\text{pred}}(\partial \mathbf{V}_{\text{true}})) \right)$$
+
+* **Standalone 3D Evaluation Script**: You can run 3D volumetric evaluation on any trained 2D model checkpoint using the standalone [evaluate_3d.py](evaluate_3d.py) script:
+  ```bash
+  # Run evaluation on all datasets matching the Run 2 configuration (base_channels=42)
+  uv run python evaluate_3d.py --dataset all --base_channels 42
+
+  # Run on a specific dataset checkpoint
+  uv run python evaluate_3d.py --dataset lumbar_mri --base_channels 42 --checkpoint best_model_lumbar_mri.pt
+  ```
+  
 ---
 
 ### Training & Validation Performance Curves
