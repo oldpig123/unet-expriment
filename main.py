@@ -529,7 +529,8 @@ def main():
                             'step': step_idx,
                             'model_state_dict': model.state_dict(),
                             'optimizer_state_dict': optimizer.state_dict(),
-                            'val_dice': best_val_dice
+                            'val_dice': best_val_dice,
+                            'val_hd': best_val_hd
                         }, temp_checkpoint_path)
                         print(f"[Checkpoint] Saved intermediate checkpoint at Epoch {epoch:02d}, Step {step_idx+1}")
                 
@@ -615,24 +616,16 @@ def main():
             if cosine_scheduler is not None:
                 cosine_scheduler.step()
                 
-            # Checkpoint & Early Stopping (Dual-Metric: DSC + 95% HD)
+            # Checkpoint & Early Stopping (Dual-Metric: BOTH DSC and 95% HD improved)
             dice_improved = mean_dice > best_val_dice
             hd_improved = mean_hd < best_val_hd and mean_hd > 0
-            either_improved = dice_improved or hd_improved
+            both_improved = dice_improved and hd_improved
             
-            if dice_improved:
+            if both_improved:
                 best_val_dice = mean_dice
-            if hd_improved:
                 best_val_hd = mean_hd
-            
-            if either_improved:
                 epochs_no_improve = 0
-                improve_reasons = []
-                if dice_improved:
-                    improve_reasons.append(f"DSC: {best_val_dice:.4f}")
-                if hd_improved:
-                    improve_reasons.append(f"HD: {best_val_hd:.2f}")
-                print(f"[Checkpoint] Metric improved ({', '.join(improve_reasons)})")
+                print(f"[Checkpoint] Metrics improved (DSC: {best_val_dice:.4f}, HD: {best_val_hd:.2f})")
                 
                 if args.checkpoint_path:
                     ckpt_dict = {
@@ -651,12 +644,12 @@ def main():
             else:
                 if epoch >= args.min_epochs:
                     epochs_no_improve += 1
-                    print(f"[Early Stopping] Neither DSC nor HD improved. Count: {epochs_no_improve}/{patience} (epoch {epoch}/{args.epochs})")
+                    print(f"[Early Stopping] Both metrics did not improve. Count: {epochs_no_improve}/{patience} (epoch {epoch}/{args.epochs})")
                     if epochs_no_improve >= patience:
-                        print(f"[Early Stopping] No improvement in either metric for {patience} consecutive epochs after min_epochs={args.min_epochs}. Stopping.")
+                        print(f"[Early Stopping] No joint improvement in both metrics for {patience} consecutive epochs after min_epochs={args.min_epochs}. Stopping.")
                         break
                 else:
-                    print(f"[Info] No improvement, but epoch {epoch} < min_epochs={args.min_epochs}. Continuing.")
+                    print(f"[Info] No joint improvement, but epoch {epoch} < min_epochs={args.min_epochs}. Continuing.")
             
             # Reset start_step for the next epoch
             start_step = 0
