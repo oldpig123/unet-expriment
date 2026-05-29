@@ -706,9 +706,9 @@ All training runs are executed using the official hyperparameters noted in the p
 
 | Dataset | Config | Epochs | Best Val Dice | Val IoU | Best 3D-HD95 | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Mendeley Lumbar MRI** | Run 2 (`ch=42`, 14.5M) | 35 | 0.9627 | 0.9291 | 0.34 mm | ✅ Completed |
-| **VerSe '19 CT** | Run 2 (`ch=42`, 14.5M) | 35 | 0.8760 | 0.8186 | 10.59 mm | ✅ Completed |
-| **VerSe '20 CT** | Run 2 (`ch=42`, 14.5M) | 21/50 | 0.9129 | 0.8582 | 3.87 mm | 🔄 Training |
+| **Mendeley Lumbar MRI** | Run 2 (`ch=42`, 14.5M) | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |
+| **VerSe '19 CT** | Run 2 (`ch=42`, 14.5M) | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |
+| **VerSe '20 CT** | Run 2 (`ch=42`, 14.5M) | 50 | *Queued* | *TBD* | *TBD* | Queued |
 
 ---
 
@@ -863,7 +863,10 @@ To facilitate a rigorous comparison, we document the specific implementation and
    * **Transition to 3D Networks:** While the current implementation processes 2D sagittal slices (matching the paper's default setup), a logical extension is to upgrade the backbone and shape-aware attention modules to 3D (using `Conv3d`, `InstanceNorm3d`, etc.).
    * **Utilizing Raw Volumetric Data:** This would allow the model to ingest raw 3D DICOM volumes (like the Mendeley `k57fr854j2` dataset) or full 3D NIfTI scans directly. Doing so would capture cross-slice spatial dependencies and coronal/axial context that are missed by a 2D slice-by-slice model, though at the cost of higher GPU VRAM usage.
 
-
+8. **Architecture & Preprocessing Fix (v7 Restart)**:
+   * **Z-Axis Geometry Issue:** We discovered that discarding empty slices during preprocessing artificially compresses the 3D volume, leading to inflated 3D HD95 metrics (~11mm instead of the paper's 2.82mm). To fix this, we updated our preprocessing pipeline to retain all slices within the spine's physical bounds, maintaining anatomical distance.
+   * **Hierarchical Training Implementation:** The original paper clearly outlines a hierarchical training strategy: the U-ResNet backbone is trained alone for the first 20 epochs before the Shape-Aware Attention Module (SAAM) is activated for joint training. We updated `model.py` and `main.py` to enforce this.
+   * **Restart Status:** Due to these critical differences, we halted previous runs. Before being killed, VerSe '20 (v6) reached **Epoch 24** with `Val Dice: 0.9101` and `Val 3D-HD95: 6.92 mm` (but this HD metric was calculated on corrupted Z-axis spacing). We have restarted all models (Lumbar MRI, VerSe '19, VerSe '20) using the updated v7 pipeline.
 
 
 
