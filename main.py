@@ -686,6 +686,19 @@ def main():
                 filepath=args.plot_path
             )
 
+        # Save final model weights at the end of training
+        if args.checkpoint_path:
+            final_path = args.checkpoint_path.replace("best_model_", "final_model_") if "best_model_" in args.checkpoint_path else "final_" + args.checkpoint_path
+            final_ckpt = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_dice': mean_dice,
+                'val_hd': mean_hd
+            }
+            torch.save(final_ckpt, final_path)
+            print(f"\n[Checkpoint] Saved final model to {final_path} (Val Dice: {mean_dice:.4f}, Val HD: {mean_hd:.2f})")
+
     print("=" * 60)
     print("ALL VERIFICATION CHECKS COMPLETED SUCCESSFULLY!")
     print("=" * 60)
