@@ -508,7 +508,8 @@ def main():
                 
                 optimizer.zero_grad()
                 with torch.cuda.amp.autocast():
-                    logits = model(images, C_s, C_hat)
+                    use_saam = epoch > 20
+                    logits = model(images, C_s, C_hat, use_saam=use_saam)
                     loss, loss_reg, loss_bound, loss_vol = criterion(logits, targets)
                 
                 scaler.scale(loss).backward()
@@ -555,7 +556,8 @@ def main():
                     val_images, val_targets = val_images.to(device), val_targets.to(device)
                     val_C_s, val_C_hat = extract_edges_and_distances(val_targets, val_images)
                     
-                    val_logits = model(val_images, val_C_s, val_C_hat)
+                    use_saam = epoch > 20
+                    val_logits = model(val_images, val_C_s, val_C_hat, use_saam=use_saam)
                     val_probs = F.softmax(val_logits, dim=1)
                     val_preds = torch.argmax(val_probs, dim=1)
                     

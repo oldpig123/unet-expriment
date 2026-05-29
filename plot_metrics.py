@@ -222,15 +222,15 @@ def main():
     datasets = [
         ('Mendeley Lumbar MRI',
          os.path.join(args.log_dir, 'mri_train.log'),
-         os.path.join(args.log_dir, 'mri_train_v6.log'),
+         os.path.join(args.log_dir, 'mri_train_v7.log'),
          'mendeley_lumbar_mri_curves.png'),
         ('VerSe 19 CT',
          os.path.join(args.log_dir, 'verse19_train.log'),
-         os.path.join(args.log_dir, 'verse19_train_v6.log'),
+         os.path.join(args.log_dir, 'verse19_train_v7.log'),
          'verse_19_ct_curves.png'),
         ('VerSe 20 CT',
          os.path.join(args.log_dir, 'verse20_train.log'),
-         os.path.join(args.log_dir, 'verse20_train_v6.log'),
+         os.path.join(args.log_dir, 'verse20_train_v7.log'),
          'verse_20_ct_curves.png'),
     ]
     

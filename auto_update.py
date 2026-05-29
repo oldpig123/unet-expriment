@@ -11,9 +11,9 @@ README_PATH = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments
 WORKSPACE_DIR = "/media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet"
 
 LOG_FILES = {
-    'mri': os.path.join(WORKSPACE_DIR, 'mri_train_v6.log'),
-    'v19': os.path.join(WORKSPACE_DIR, 'verse19_train_v6.log'),
-    'v20': os.path.join(WORKSPACE_DIR, 'verse20_train_v6.log'),
+    'mri': os.path.join(WORKSPACE_DIR, 'mri_train_v7.log'),
+    'v19': os.path.join(WORKSPACE_DIR, 'verse19_train_v7.log'),
+    'v20': os.path.join(WORKSPACE_DIR, 'verse20_train_v7.log'),
 }
 
 def is_dataset_running(dataset_name):
@@ -78,23 +78,9 @@ def parse_best_metrics(filepath, ckpt_path=None):
                 'hd': hds[best_idx]
             }
 
-    # Compare and return the one with the higher dice score (rounded to 4 decimals).
-    # If rounded dice is equal, prefer the one with the lower Hausdorff Distance.
+    # Prioritize the checkpoint metrics if available, as they represent the actual saved weights.
     res = None
-    if best_ckpt and best_log:
-        ckpt_dice_rnd = round(best_ckpt['dice'], 4)
-        log_dice_rnd = round(best_log['dice'], 4)
-        if ckpt_dice_rnd > log_dice_rnd:
-            res = best_ckpt
-        elif log_dice_rnd > ckpt_dice_rnd:
-            res = best_log
-        else:
-            # Tiebreaker: lower HD is better
-            if best_ckpt['hd'] < best_log['hd']:
-                res = best_ckpt
-            else:
-                res = best_log
-    elif best_ckpt:
+    if best_ckpt:
         res = best_ckpt
     elif best_log:
         res = best_log

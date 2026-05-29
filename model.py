@@ -323,7 +323,7 @@ class UResNet_Attention(nn.Module):
         # Output Classification Layer
         self.out_conv = nn.Conv2d(base_channels, n_classes, kernel_size=1)
 
-    def forward(self, x, C_s, C_hat):
+    def forward(self, x, C_s, C_hat, use_saam=True):
         # Initial projection
         x_init = self.init_conv(x)
         x_init = self.init_norm(x_init)
@@ -339,25 +339,25 @@ class UResNet_Attention(nn.Module):
         # Level 1 (Deep)
         d1_up = self.up_conv1(e4)
         d1_fused = self.asc1(e3, d1_up)
-        d1_att = self.saam1(d1_fused, C_s, C_hat)
+        d1_att = self.saam1(d1_fused, C_s, C_hat) if use_saam else d1_fused
         d1 = self.dec1(d1_att)              # (B, 256, 128, 128)
 
         # Level 2 (Deep)
         d2_up = self.up_conv2(d1)
         d2_fused = self.asc2(e2, d2_up)
-        d2_att = self.saam2(d2_fused, C_s, C_hat)
+        d2_att = self.saam2(d2_fused, C_s, C_hat) if use_saam else d2_fused
         d2 = self.dec2(d2_att)              # (B, 128, 256, 256)
 
         # Level 3 (Shallow)
         d3_up = self.up_conv3(d2)
         d3_fused = self.asc3(e1, d3_up)
-        d3_att = self.saam3(d3_fused, C_s, C_hat)
+        d3_att = self.saam3(d3_fused, C_s, C_hat) if use_saam else d3_fused
         d3 = self.dec3(d3_att)              # (B, 64, 512, 512)
 
         # Level 4 (Shallow)
         # Fuses Decoder Level 3 with Initial Projection Features (both at 512x512)
         d4_fused = self.asc4(x_init, d3)
-        d4_att = self.saam4(d4_fused, C_s, C_hat)
+        d4_att = self.saam4(d4_fused, C_s, C_hat) if use_saam else d4_fused
         d4 = self.dec4(d4_att)              # (B, 64, 512, 512)
 
         # Final Segmentation Output

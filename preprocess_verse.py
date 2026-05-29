@@ -114,22 +114,35 @@ def preprocess_single(ct_path, output_dir):
         num_slices = ct_data.shape[2]
         patient_slices = 0
         
+        # First, find min and max slice index containing at least 10 mask pixels
+        valid_indices = []
         for s_idx in range(num_slices):
+            if np.sum(seg_data[:, :, s_idx] > 0) >= 10:
+                valid_indices.append(s_idx)
+                
+        if not valid_indices:
+            print(f"No valid slices found for {pid}")
+            return True, 0, None
+            
+        min_idx = min(valid_indices)
+        max_idx = max(valid_indices)
+        
+        # Keep all slices between min_idx and max_idx to maintain 3D Z-axis continuity
+        for s_idx in range(min_idx, max_idx + 1):
             slice_ct = ct_norm[:, :, s_idx]
             slice_seg = seg_data[:, :, s_idx]
             
             slice_seg_binary = (slice_seg > 0).astype(np.uint8)
+            slice_ct_8bit = (slice_ct * 255).astype(np.uint8)
             
-            if np.sum(slice_seg_binary) >= 10:
-                slice_ct_8bit = (slice_ct * 255).astype(np.uint8)
-                img_pil = Image.fromarray(slice_ct_8bit)
-                lbl_pil = Image.fromarray(slice_seg_binary)
-                
-                slice_name = f"{pid}_slice{s_idx:03d}.png"
-                img_pil.save(os.path.join(output_dir, "images", slice_name))
-                lbl_pil.save(os.path.join(output_dir, "labels", slice_name))
-                
-                patient_slices += 1
+            img_pil = Image.fromarray(slice_ct_8bit)
+            lbl_pil = Image.fromarray(slice_seg_binary)
+            
+            slice_name = f"{pid}_slice{s_idx:03d}.png"
+            img_pil.save(os.path.join(output_dir, "images", slice_name))
+            lbl_pil.save(os.path.join(output_dir, "labels", slice_name))
+            
+            patient_slices += 1
                 
         return True, patient_slices, None
     except Exception as e:
