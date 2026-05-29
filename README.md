@@ -715,7 +715,7 @@ All training runs are executed using the official hyperparameters noted in the p
 | Dataset | Config | Epochs | Best Val Dice | Val IoU | Best 3D-HD95 | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Mendeley Lumbar MRI** | Run 3 (`ch=42`, 14.5M) | 34 | 0.9633 | 0.9299 | 0.18 mm | ✅ Completed |
-| **VerSe '19 CT** | Run 3 (`ch=42`, 14.5M) | 4/60 (Best: 2) | 0.8651 | 0.7902 | 14.96 mm | 🔄 Training |
+| **VerSe '19 CT** | Run 3 (`ch=42`, 14.5M) | 5/60 (Best: 2) | 0.8651 | 0.7902 | 14.96 mm | 🔄 Training |
 | **VerSe '20 CT** | Run 3 (`ch=42`, 14.5M) | 2/60 (Best: 1) | 0.8567 | 0.7775 | 35.74 mm | 🔄 Training |
 
 ---
