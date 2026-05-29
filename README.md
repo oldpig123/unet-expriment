@@ -714,7 +714,7 @@ All training runs are executed using the official hyperparameters noted in the p
 
 | Dataset | Config | Epochs | Best Val Dice | Val IoU | Best 3D-HD95 | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Mendeley Lumbar MRI** | Run 3 (`ch=42`, 14.5M) | 1/50 | 0.9361 | 0.8820 | 1.20 mm | 🔄 Training |
+| **Mendeley Lumbar MRI** | Run 3 (`ch=42`, 14.5M) | 2/50 | 0.9468 | 0.9006 | 0.61 mm | 🔄 Training |
 | **VerSe '19 CT** | Run 3 (`ch=42`, 14.5M) | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |
 | **VerSe '20 CT** | Run 3 (`ch=42`, 14.5M) | 50 | *Queued* | *TBD* | *TBD* | Queued |
 
@@ -815,7 +815,7 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | **Paper** | Ours (U-ResNet + SAAM) | 0.8990 ± 0.0100 | 0.8410 ± 0.0130 | 0.8700 | 2.65 ± 0.08 mm |
 | **Run 1** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | **0.9454** | **0.9806** | **0.9630** | **5.47 px** (~3.20 mm, 2D) |
 | **Run 2** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | **0.0000** | **0.0000** | **0.9361** (Epoch 1, 🔄 training) | **1.20 mm** (3D-HD95) |
-| **Run 3** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | **0.0000** | **0.0000** | **0.9361** (Epoch 1, 🔄 training) | **1.20 mm** (3D-HD95) |
+| **Run 3** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | **0.0000** | **0.0000** | **0.9468** (Epoch 2, 🔄 training) | **0.61 mm** (3D-HD95) |
 
 *Note: Run 1 used `base_channels=32` (8.57M parameters, 20 epochs). Run 2 used `base_channels=42` (14.5M parameters, 40 epochs with early stopping) but had a preprocessing Z-axis compression issue. Run 3 uses `base_channels=42` (14.5M parameters, 50 epochs) with corrected contiguous slice preprocessing and hierarchical training. Run 1 HD is 2D slice-level in pixels; Run 2 and 3 HD are 3D patient-level in mm. A separate 2D evaluation of Run 2 yields 5.53 px (~3.24 mm), also competitive with the paper's 2.65 mm.*
 
