@@ -119,7 +119,7 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
         is_running = running_status.get(status_key, False)
         is_real_res = res and res.get('dice', -1.0) > 0.0
         
-        config_str = "Run 2 (`ch=42`, 14.5M)"
+        config_str = "Run 3 (`ch=42`, 14.5M)"
         
         def format_hd(hd_val):
             if hd_val == float('inf') or np.isinf(hd_val) or hd_val is None:
@@ -144,7 +144,7 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
     
     # Generate the table content
     table_pattern = re.compile(
-        r"(#### Run 2 — `base_channels=42` \(14\.5M parameters\), 3D patient-level HD95 in mm\s*\n\s*\n\| Dataset \| Config \| Epochs \| Best Val Dice \| Val IoU \| Best 3D-HD95 \| Status \|\n\| :--- \| :--- \| :---: \| :---: \| :---: \| :---: \| :---: \|\n)(.*?)(\n\n---)",
+        r"(#### Run 3 — `base_channels=42` \(14\.5M parameters\), 3D patient-level HD95 in mm \(Hierarchical Training & Preprocessing Fix\)\s*\n\s*\n\| Dataset \| Config \| Epochs \| Best Val Dice \| Val IoU \| Best 3D-HD95 \| Status \|\n\| :--- \| :--- \| :---: \| :---: \| :---: \| :---: \| :---: \|\n)(.*?)(\n\n---)",
         re.DOTALL
     )
     
@@ -158,13 +158,13 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
 
     # Update VerSe and MRI Comparison Table rows if they exist
     mri_comp_pattern = re.compile(
-        r"(\| \*\*Run 2\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| )(.*?)(\n)"
+        r"(\| \*\*Run 3\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| )(.*?)(\n)"
     )
     v19_comp_pattern = re.compile(
-        r"(\| \*\*Run 2 \(V19\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '19 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
+        r"(\| \*\*Run 3 \(V19\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '19 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
     )
     v20_comp_pattern = re.compile(
-        r"(\| \*\*Run 2 \(V20\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '20 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
+        r"(\| \*\*Run 3 \(V20\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '20 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
     )
     
     def format_hd(hd_val):
