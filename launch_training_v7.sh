@@ -9,7 +9,7 @@ pkill -f "auto_update.py" || true
 echo "Checking GPU status..."
 nvidia-smi
 
-# 1. Start Mendeley MRI -> VerSe 20 CT chain on GPU 0 in the background
+# 1. Start Mendeley MRI on GPU 0 in the background
 echo "Starting Mendeley MRI training on GPU 0..."
 CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True uv run python main.py \
   --dataset lumbar_mri \
@@ -17,8 +17,10 @@ CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True uv run p
   --batch_size 4 \
   --base_channels 42 \
   --checkpoint_path best_model_lumbar_mri.pt \
-  --plot_path verification_plot_lumbar_mri.png >> mri_train_v7.log 2>&1 && \
-echo "Mendeley MRI complete. Starting VerSe '20 CT training on GPU 0..." && \
+  --plot_path verification_plot_lumbar_mri.png >> mri_train_v7.log 2>&1 &
+
+# 2. Start VerSe '20 CT on GPU 0 in the background
+echo "Starting VerSe '20 CT training on GPU 0..."
 CUDA_VISIBLE_DEVICES=0 uv run python main.py \
   --dataset verse20 \
   --epochs 50 \
@@ -27,7 +29,7 @@ CUDA_VISIBLE_DEVICES=0 uv run python main.py \
   --checkpoint_path best_model_verse20.pt \
   --plot_path verification_plot_verse20.png >> verse20_train_v7.log 2>&1 &
 
-# 2. Start VerSe 19 CT on GPU 1 in the background
+# 3. Start VerSe 19 CT on GPU 1 in the background
 echo "Starting VerSe '19 CT training on GPU 1..."
 CUDA_VISIBLE_DEVICES=1 uv run python main.py \
   --dataset verse19 \
