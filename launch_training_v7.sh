@@ -13,7 +13,8 @@ nvidia-smi
 echo "Starting Mendeley MRI training on GPU 0..."
 CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True uv run python main.py \
   --dataset lumbar_mri \
-  --epochs 50 \
+  --epochs 60 \
+  --min_epochs 35 \
   --batch_size 4 \
   --base_channels 42 \
   --checkpoint_path best_model_lumbar_mri.pt \
@@ -23,7 +24,8 @@ CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True uv run p
 echo "Starting VerSe '20 CT training on GPU 0..."
 CUDA_VISIBLE_DEVICES=0 uv run python main.py \
   --dataset verse20 \
-  --epochs 50 \
+  --epochs 60 \
+  --min_epochs 35 \
   --batch_size 6 \
   --base_channels 42 \
   --checkpoint_path best_model_verse20.pt \
@@ -33,7 +35,8 @@ CUDA_VISIBLE_DEVICES=0 uv run python main.py \
 echo "Starting VerSe '19 CT training on GPU 1..."
 CUDA_VISIBLE_DEVICES=1 uv run python main.py \
   --dataset verse19 \
-  --epochs 50 \
+  --epochs 60 \
+  --min_epochs 35 \
   --batch_size 6 \
   --base_channels 42 \
   --checkpoint_path best_model_verse19.pt \
