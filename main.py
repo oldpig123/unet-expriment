@@ -545,6 +545,7 @@ def main():
             model.eval()
             val_dice_list = []
             val_iou_list = []
+            val_dice_class = {1: [], 2: []}
             # Accumulate per-slice predictions for 3D volume reconstruction
             patient_slices = {}  # pid -> [(slice_idx, pred_np, true_np)]
             
@@ -577,6 +578,7 @@ def main():
                             iou = intersection / (union + 1e-8)
                             val_dice_list.append(dice.item())
                             val_iou_list.append(iou.item())
+                            val_dice_class[c].append(dice.item())
                     
                     # Accumulate predictions per patient for 3D HD
                     val_preds_np = val_preds.cpu().numpy().astype(np.uint8)
@@ -612,7 +614,12 @@ def main():
             mean_iou = np.mean(val_iou_list) if val_iou_list else 0.0
             mean_hd = np.mean(patient_hd_list) if patient_hd_list else 0.0
             
-            print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val 3D-HD95: {mean_hd:.2f} mm ({len(selected_pids)} patients)")
+            if args.dataset == "lumbar_mri":
+                mean_dice_c1 = np.mean(val_dice_class[1]) if val_dice_class[1] else 0.0
+                mean_dice_c2 = np.mean(val_dice_class[2]) if val_dice_class[2] else 0.0
+                print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} (Vert: {mean_dice_c1:.4f}, Disc: {mean_dice_c2:.4f}) | Val IoU: {mean_iou:.4f} | Val 3D-HD95: {mean_hd:.2f} mm ({len(selected_pids)} patients)")
+            else:
+                print(f"Epoch {epoch:02d}/{args.epochs} | Train Loss: {train_loss:.6f} | Val Dice: {mean_dice:.4f} | Val IoU: {mean_iou:.4f} | Val 3D-HD95: {mean_hd:.2f} mm ({len(selected_pids)} patients)")
             
             # Step the cosine scheduler if active
             if cosine_scheduler is not None:
@@ -637,7 +644,9 @@ def main():
                         'optimizer_state_dict': optimizer.state_dict(),
                         'val_dice': best_val_dice,
                         'val_iou': mean_iou,
-                        'val_hd': best_val_hd
+                        'val_hd': best_val_hd,
+                        'val_dice_c1': np.mean(val_dice_class[1]) if val_dice_class[1] else 0.0,
+                        'val_dice_c2': np.mean(val_dice_class[2]) if val_dice_class[2] else 0.0
                     }
                     torch.save(ckpt_dict, args.checkpoint_path)
                     if temp_checkpoint_path:

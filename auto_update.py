@@ -30,7 +30,7 @@ def get_running_status():
         'v20': is_dataset_running('verse20')
     }
 
-def parse_best_metrics(filepath, ckpt_path=None):
+def parse_best_metrics(filepath, ckpt_path=None, is_mri=False):
     """
     Parses a log file and optionally a checkpoint file, returning the metrics
     of the epoch with the highest Val Dice.
@@ -44,21 +44,30 @@ def parse_best_metrics(filepath, ckpt_path=None):
                     'epoch': checkpoint['epoch'],
                     'dice': checkpoint['val_dice'],
                     'iou': checkpoint.get('val_iou', 0.0),
-                    'hd': checkpoint.get('val_hd', 0.0)
+                    'hd': checkpoint.get('val_hd', 0.0),
+                    'dice_c1': checkpoint.get('val_dice_c1', 0.0),
+                    'dice_c2': checkpoint.get('val_dice_c2', 0.0)
                 }
         except Exception as e:
             print(f"[Warning] Failed to load checkpoint {ckpt_path} in auto-updater: {e}")
 
     best_log = None
     if os.path.exists(filepath):
-        pattern = re.compile(
-            r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+3D-HD95:\s*([\d.]+)\s*mm"
-        )
+        if is_mri:
+            pattern = re.compile(
+                r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\(Vert:\s*([\d.]+),\s*Disc:\s*([\d.]+)\)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+3D-HD95:\s*([\d.]+)\s*mm"
+            )
+        else:
+            pattern = re.compile(
+                r"Epoch\s+(\d+)/\d+\s*\|\s*Train\s+Loss:\s*([\d.]+)\s*\|\s*Val\s+Dice:\s*([\d.]+)\s*\|\s*Val\s+IoU:\s*([\d.]+)\s*\|\s*Val\s+3D-HD95:\s*([\d.]+)\s*mm"
+            )
         
         epochs = []
         dices = []
         ious = []
         hds = []
+        dices_c1 = []
+        dices_c2 = []
         
         with open(filepath, 'r') as f:
             for line in f:
@@ -66,9 +75,15 @@ def parse_best_metrics(filepath, ckpt_path=None):
                 if match:
                     epochs.append(int(match.group(1)))
                     dices.append(float(match.group(3)))
-                    ious.append(float(match.group(4)))
-                    hds.append(float(match.group(5)))
-                    
+                    if is_mri:
+                        dices_c1.append(float(match.group(4)))
+                        dices_c2.append(float(match.group(5)))
+                        ious.append(float(match.group(6)))
+                        hds.append(float(match.group(7)))
+                    else:
+                        ious.append(float(match.group(4)))
+                        hds.append(float(match.group(5)))
+                        
         if dices:
             best_idx = np.argmax(dices)
             best_log = {
@@ -77,6 +92,9 @@ def parse_best_metrics(filepath, ckpt_path=None):
                 'iou': ious[best_idx],
                 'hd': hds[best_idx]
             }
+            if is_mri and len(dices_c1) > best_idx:
+                best_log['dice_c1'] = dices_c1[best_idx]
+                best_log['dice_c2'] = dices_c2[best_idx]
 
     # Prioritize the checkpoint metrics if available, as they represent the actual saved weights.
     res = None
@@ -138,7 +156,10 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
     else:
         print("[Error] Could not find matching table pattern in README.md")
 
-    # Update VerSe Comparison Table rows if they exist
+    # Update VerSe and MRI Comparison Table rows if they exist
+    mri_comp_pattern = re.compile(
+        r"(\| \*\*Run 2\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| )(.*?)(\n)"
+    )
     v19_comp_pattern = re.compile(
         r"(\| \*\*Run 2 \(V19\)\*\* \(`ch=42`, 14\.5M\) \| Ours \(U-ResNet \+ SAAM\) \| VerSe '19 \| Vertebrae \(Combined\) \| )(.*?)(\n)"
     )
@@ -150,6 +171,13 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
         if hd_val == float('inf') or np.isinf(hd_val) or hd_val is None:
             return "inf"
         return f"{hd_val:.2f}"
+
+    if mri_res and mri_res.get('dice', -1.0) > 0.0:
+        mri_status = ", 🔄 training" if running_status.get('mri', False) else ""
+        dice_c1 = mri_res.get('dice_c1', 0.0)
+        dice_c2 = mri_res.get('dice_c2', 0.0)
+        mri_comp_row = f"**{dice_c1:.4f}** | **{dice_c2:.4f}** | **{mri_res['dice']:.4f}** (Epoch {mri_res['epoch']}{mri_status}) | **{format_hd(mri_res['hd'])} mm** (3D-HD95) |"
+        content = mri_comp_pattern.sub(r"\1" + mri_comp_row + r"\3", content)
 
     if v19_res and v19_res.get('dice', -1.0) > 0.0:
         v19_status = ", 🔄 training" if running_status.get('v19', False) else ""
@@ -222,9 +250,9 @@ def perform_iteration():
         
     # 2. Parse log files
     print("[Info] Parsing log files...")
-    mri_res = parse_best_metrics(LOG_FILES['mri'], os.path.join(WORKSPACE_DIR, 'best_model_lumbar_mri.pt'))
-    v19_res = parse_best_metrics(LOG_FILES['v19'], os.path.join(WORKSPACE_DIR, 'best_model_verse19.pt'))
-    v20_res = parse_best_metrics(LOG_FILES['v20'], os.path.join(WORKSPACE_DIR, 'best_model_verse20.pt'))
+    mri_res = parse_best_metrics(LOG_FILES['mri'], os.path.join(WORKSPACE_DIR, 'best_model_lumbar_mri.pt'), is_mri=True)
+    v19_res = parse_best_metrics(LOG_FILES['v19'], os.path.join(WORKSPACE_DIR, 'best_model_verse19.pt'), is_mri=False)
+    v20_res = parse_best_metrics(LOG_FILES['v20'], os.path.join(WORKSPACE_DIR, 'best_model_verse20.pt'), is_mri=False)
     
     # 3. Get running statuses
     running_status = get_running_status()
