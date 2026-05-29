@@ -706,7 +706,7 @@ All training runs are executed using the official hyperparameters noted in the p
 
 | Dataset | Config | Epochs | Best Val Dice | Val IoU | Best 3D-HD95 | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Mendeley Lumbar MRI** | Run 2 (`ch=42`, 14.5M) | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |
+| **Mendeley Lumbar MRI** | Run 2 (`ch=42`, 14.5M) | 1/50 | 0.9361 | 0.8820 | 1.20 mm | 🔄 Training |
 | **VerSe '19 CT** | Run 2 (`ch=42`, 14.5M) | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |
 | **VerSe '20 CT** | Run 2 (`ch=42`, 14.5M) | 50 | *Queued* | *TBD* | *TBD* | Queued |
 
