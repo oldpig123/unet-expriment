@@ -128,15 +128,15 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
             
         if is_real_res:
             status_str = "🔄 Training" if is_running else "✅ Completed"
-            epoch_str = f"{res['epoch']}/50" if is_running else f"{res['epoch']}"
+            epoch_str = f"{res['epoch']}/60" if is_running else f"{res['epoch']}"
             return f"| **{name}** | {config_str} | {epoch_str} | {res['dice']:.4f} | {res['iou']:.4f} | {format_hd(res['hd'])} | {status_str} |"
         else:
             if is_running:
-                return f"| **{name}** | {config_str} | 1/50 | *In Progress* | *TBD* | *TBD* | 🔄 Training |"
+                return f"| **{name}** | {config_str} | 1/60 | *In Progress* | *TBD* | *TBD* | 🔄 Training |"
             else:
                 if name == "VerSe '20 CT" and running_status.get('v19', False):
-                    return f"| **{name}** | {config_str} | 50 | *Queued* | *TBD* | *TBD* | Queued |"
-                return f"| **{name}** | {config_str} | 50 | *N/A* | *N/A* | *N/A* | Failed/Aborted |"
+                    return f"| **{name}** | {config_str} | 60 | *Queued* | *TBD* | *TBD* | Queued |"
+                return f"| **{name}** | {config_str} | 60 | *N/A* | *N/A* | *N/A* | Failed/Aborted |"
 
     mri_row = format_row("Mendeley Lumbar MRI", mri_res, 'mri')
     v19_row = format_row("VerSe '19 CT", v19_res, 'v19')
