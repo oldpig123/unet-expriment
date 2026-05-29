@@ -106,6 +106,21 @@ def parse_best_metrics(filepath, ckpt_path=None, is_mri=False):
     return res
 
 
+def parse_current_epoch(filepath):
+    if not os.path.exists(filepath):
+        return 0
+    current_ep = 0
+    pattern = re.compile(r"--- Epoch\s+(\d+)/\d+")
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                match = pattern.search(line)
+                if match:
+                    current_ep = int(match.group(1))
+    except Exception as e:
+        print(f"[Warning] Failed to parse current epoch: {e}")
+    return current_ep
+
 def update_readme_table(mri_res, v19_res, v20_res, running_status):
     if not os.path.exists(README_PATH):
         print(f"[Error] README.md not found at {README_PATH}")
@@ -118,6 +133,7 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
     def format_row(name, res, status_key):
         is_running = running_status.get(status_key, False)
         is_real_res = res and res.get('dice', -1.0) > 0.0
+        current_ep = parse_current_epoch(LOG_FILES[status_key])
         
         config_str = "Run 3 (`ch=42`, 14.5M)"
         
@@ -128,11 +144,15 @@ def update_readme_table(mri_res, v19_res, v20_res, running_status):
             
         if is_real_res:
             status_str = "🔄 Training" if is_running else "✅ Completed"
-            epoch_str = f"{res['epoch']}/60" if is_running else f"{res['epoch']}"
+            if is_running:
+                epoch_str = f"{current_ep}/60 (Best: {res['epoch']})"
+            else:
+                epoch_str = f"{res['epoch']}"
             return f"| **{name}** | {config_str} | {epoch_str} | {res['dice']:.4f} | {res['iou']:.4f} | {format_hd(res['hd'])} | {status_str} |"
         else:
             if is_running:
-                return f"| **{name}** | {config_str} | 1/60 | *In Progress* | *TBD* | *TBD* | 🔄 Training |"
+                display_ep = max(current_ep, 1)
+                return f"| **{name}** | {config_str} | {display_ep}/60 | *In Progress* | *TBD* | *TBD* | 🔄 Training |"
             else:
                 if name == "VerSe '20 CT" and running_status.get('v19', False):
                     return f"| **{name}** | {config_str} | 60 | *Queued* | *TBD* | *TBD* | Queued |"
@@ -281,8 +301,8 @@ def main():
             perform_iteration()
             break
             
-        print("[Monitor] Processes still running. Sleeping for 300 seconds...")
-        time.sleep(300)
+        print("[Monitor] Processes still running. Sleeping for 60 seconds...")
+        time.sleep(60)
         
     print("[Info] Auto-update flow finished successfully!")
 
