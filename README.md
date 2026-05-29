@@ -806,7 +806,7 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | **Paper** | Ours (U-ResNet + SAAM) | 0.8990 ± 0.0100 | 0.8410 ± 0.0130 | 0.8700 | 2.65 ± 0.08 mm |
 | **Run 1** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | **0.9454** | **0.9806** | **0.9630** | **5.47 px** (~3.20 mm, 2D) |
-| **Run 2** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | **0.9450** | **0.9814** | **0.9632** | **0.18 mm** (3D-HD95) |
+| **Run 2** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | *In Progress* | *In Progress* | *In Progress* | *In Progress* (3D-HD95, 🔄 training) |
 
 *Note: Run 1 used `base_channels=32` (8.57M parameters, 20 epochs). Run 2 used `base_channels=42` (14.5M parameters, 40 epochs with early stopping). The Dice scores are nearly identical across runs, confirming that the MRI dataset is saturated and the shape-aware attention generalizes well even at reduced capacity. Run 1 HD is 2D slice-level in pixels; Run 2 HD is 3D patient-level in mm. A separate 2D evaluation of Run 2 yields 5.53 px (~3.24 mm), also competitive with the paper's 2.65 mm.*
 
@@ -818,8 +818,8 @@ We compare our implementation's best results with the SOTA metrics reported in t
 | | | - | Small Vertebrae | 0.8350 ± 0.0140 | (Combined) |
 | **Run 1 (V19)** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | VerSe '19 | Vertebrae (Combined) | **0.8842** (Epoch 7) | **21.81 px** (21.81 mm, 2D) |
 | **Run 1 (V20)** (`ch=32`, 8.57M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | **0.9116** (Epoch 7) | **10.61 px** (10.61 mm, 2D) |
-| **Run 2 (V19)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '19 | Vertebrae (Combined) | **0.8760** (Epoch 35) | **10.59 mm** (3D-HD95) |
-| **Run 2 (V20)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | **0.9129** (Epoch 21, 🔄 training) | **3.87 mm** (3D-HD95) |
+| **Run 2 (V19)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '19 | Vertebrae (Combined) | *In Progress* | *In Progress* (3D-HD95, 🔄 training) |
+| **Run 2 (V20)** (`ch=42`, 14.5M) | Ours (U-ResNet + SAAM) | VerSe '20 | Vertebrae (Combined) | *In Progress* | *In Progress* (3D-HD95, 🔄 training) |
 
 *Note: In our implementation, we formulate vertebrae segmentation as a binary task (Vertebrae vs. Background) to verify the backbone, shape-aware attention, and loss components. Hence, we report a single combined Vertebrae Val Dice. For the VerSe dataset, the CT resolution is isotropic at 1.0 mm/voxel. Run 1 HD is 2D slice-level in pixels (1 px = 1 mm for CT). Run 2 HD is 3D patient-level in mm. Run 2 is currently in progress; values will be updated upon completion.*
 
