@@ -800,10 +800,13 @@ The verification plot generated at the end of a run (defined by `save_verificati
 *   **Mendeley Lumbar Spine MRI (Completed — Final Model at Epoch 39)**: Val Dice: `0.9640` | Val IoU: `0.9312` | Val 3D-HD95: `0.35 mm`
     ![Lumbar MRI Final Model Verification Panel](./verification_plot_lumbar_mri.png)
 
-*   **VerSe '19 CT (Active Run 3 — Epoch 6 best)**: Val Dice: `0.8845` | Val IoU: `0.8198` | Val 3D-HD95: `9.09 mm`
-    ![VerSe 19 Verification Panel](./verification_plot_verse19.png)
+*   **VerSe '19 CT (Completed — Best Model at Epoch 6)**: Val Dice: `0.8845` | Val IoU: `0.8198` | Val 3D-HD95: `9.09 mm`
+    ![VerSe 19 Best Model Verification Panel](./verification_plot_verse19_best.png)
 
-*   **VerSe '20 CT (Active Run 3 — Epoch 6 best)**: Val Dice: `0.9120` | Val IoU: `0.8552` | Val 3D-HD95: `5.90 mm`
+*   **VerSe '19 CT (Completed — Final Model at Epoch 39)**: Val Dice: `0.8620` | Val IoU: `0.7910` | Val 3D-HD95: `14.03 mm`
+    ![VerSe 19 Final Model Verification Panel](./verification_plot_verse19.png)
+
+*   **VerSe '20 CT (Active Run 3 — Best Model at Epoch 15)**: Val Dice: `0.9167` | Val IoU: `0.8626` | Val 3D-HD95: `4.14 mm`
     ![VerSe 20 Verification Panel](./verification_plot_verse20.png)
 
 ---
