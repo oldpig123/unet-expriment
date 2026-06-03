@@ -885,5 +885,32 @@ To facilitate a rigorous comparison, we document the specific implementation and
    * **Hierarchical Training Implementation:** The original paper clearly outlines a hierarchical training strategy: the U-ResNet backbone is trained alone for the first 20 epochs before the Shape-Aware Attention Module (SAAM) is activated for joint training. We updated `model.py` and `main.py` to enforce this.
    * **Restart Status:** Due to these critical differences, we halted previous runs. Before being killed, VerSe '20 (v6) reached **Epoch 24** with `Val Dice: 0.9101` and `Val 3D-HD95: 6.92 mm` (but this HD metric was calculated on corrupted Z-axis spacing). We have restarted all models (Lumbar MRI, VerSe '19, VerSe '20) using the updated v7 pipeline.
 
+9. **Differentiable Loss vs. Reinforcement Learning (RL) for Non-Differentiable Metric Optimization & Label Efficiency**:
+   
+   To address the discrepancy in 3D-HD95 evaluation metrics and design a more label-efficient segmentation pipeline, we explore a theoretical framework using **Reinforcement Learning (RL)**:
+   
+   * **The Metric Discrepancy (Multiclass vs. Binary HD95):** 
+     The original paper reports an HD95 of $2.82\text{ mm}$ for the VerSe datasets. In our binary formulation (Vertebrae vs. Background), any single false-positive "island" or missed vertebra at the volume boundaries inflates the global 3D-HD95 to $\sim 4.14 - 9.09\text{ mm}$, because 3D-HD95 is calculated globally across the entire patient-level spine structure. The paper evaluates HD95 *per individual vertebra class* and averages them, which prevents local boundary mismatches from amplifying the global distance score.
+   
+   * **The Loss Function Thought Experiment:**
+     While regional metrics like Dice Similarity Coefficient (DSC) are easily formulated as differentiable loss functions (e.g., Dice Loss), distance metrics like Hausdorff Distance (HD/HD95) are inherently non-differentiable due to the thresholding and $\max/\min$ operations.
+     To circumvent this, our pipeline utilizes a differentiable surrogate (distance-weighted boundary loss $L_{\text{boundary}}$ in [loss.py](file:///media/nmlab326/b2cd0f5f-2bd7-46c8-8a50-58708471c1bf1/experiments/unet/loss.py)). An alternative approach is to treat HD95 as a **non-differentiable reward signal** inside a Reinforcement Learning loop, optimizing the model weights using Policy Gradient methods (like PPO or REINFORCE).
+   
+   * **Label Efficiency and Weak Supervision:**
+     Our current pipeline trains on 56,000+ fully annotated 2D slices, which is label-expensive. Under an RL formulation, the model can learn to segment using **weak labels or landmarks** instead of dense masks:
+     * **Landmark Clicks:** Using center points of vertebrae as clicks. The agent is rewarded if its predicted shape encapsulates the click and has its centroid close to the click.
+     * **Anatomical Prior Rewards:** Rewarding segmentations that adhere to physical/anatomical laws (e.g., Left-Right symmetry, vertebra volume consistency, or linear vertebral column connectivity) without requiring dense pixel-level masks.
+     * **Adversarial Rewards (RLHF/RLAIF for Segmentation):** Training a shape discriminator on a very small set of annotated scans, and using its output as an RL reward to guide the segmentation policy on a large set of unlabeled scans.
+   
+   * **Landmark Research Papers:**
+     * **Differentiable Boundary Surrogates:** 
+       * H. Kervadec et al., *"Boundary loss for highly unbalanced segmentation,"* Medical Image Analysis, 2019 (Formulates shape distance as a regional integral).
+       * D. Karimi and S. E. Salcudean, *"Reducing the Hausdorff distance in medical image segmentation with convolutional neural networks,"* IEEE Transactions on Medical Imaging, 2020 (Approximates HD using differentiable soft-max over distance transforms).
+     * **Reinforcement Learning for Medical Segmentation & Weak Supervision:**
+       * H. Kervadec et al., *"Competing for pixels: A self-play algorithm for weakly-supervised semantic segmentation,"* (Uses RL policies to negotiate pixel assignments).
+       * MEDREASONER (c. 2025/2026), *"MedReasoner: Reinforcement Learning from Clinical Text to Voxel-Level Precision,"* (Uses RL policy gradients to map weak textual/spatial prompts to precise segmentations).
+       * F. P. M. S. et al., *"Interactive Medical Image Segmentation using Deep Reinforcement Learning,"* (Models human point-click interactions as sequential RL actions to refine contours).
+
+
 
 
