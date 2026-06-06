@@ -716,7 +716,7 @@ All training runs are executed using the official hyperparameters noted in the p
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: |
 | **Mendeley Lumbar MRI** | Run 3 (`ch=42`, 14.5M) | 34 | 0.9633 | 0.9299 | 0.18 mm | ✅ Completed |
 | **VerSe '19 CT** | Run 3 (`ch=42`, 14.5M) | 66/60 (Best: 65) | 0.8884 | 0.8266 | 15.06 mm | 🔄 Training |
-| **VerSe '20 CT** | Run 3 (`ch=42`, 14.5M) | 46/60 (Best: 40) | 0.9168 | 0.8625 | 5.91 mm | 🔄 Training |
+| **VerSe '20 CT** | Run 3 (`ch=42`, 14.5M) | 47/60 (Best: 40) | 0.9168 | 0.8625 | 5.91 mm | 🔄 Training |
 
 ---
 
