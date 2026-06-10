@@ -803,7 +803,7 @@ The verification plot generated at the end of a run (defined by `save_verificati
 *   **VerSe '19 CT (Extended Run 3 — Best Model at Epoch 45 / 66)**: Val Dice: `0.8877` | Val IoU: `0.8254` | Val 3D-HD95: `8.57 mm` (Epoch 45) / Val Dice: `0.8886` | Val IoU: `0.8267` | Val 3D-HD95: `11.36 mm` (Epoch 66)
     ![VerSe 19 Best Model Verification Panel](./verification_plot_verse19_best.png)
 
-*   **VerSe '19 CT (Extended Run 3 — Active Model at Epoch 100)**: Val Dice: `0.8856` | Val IoU: `0.8222` | Val 3D-HD95: `14.45 mm`
+*   **VerSe '19 CT (Extended Run 3 — Active Model at Epoch 100)**: Val Dice: `0.8843` | Val IoU: `0.8207` | Val 3D-HD95: `7.98 mm`
     ![VerSe 19 Active Model Verification Panel](./verification_plot_verse19.png)
 
 *   **VerSe '20 CT (Extended Run 3 — Best Model at Epoch 15 / 40)**: Val Dice: `0.9167` | Val IoU: `0.8626` | Val 3D-HD95: `4.14 mm` (Epoch 15) / Val Dice: `0.9168` | Val IoU: `0.8625` | Val 3D-HD95: `5.91 mm` (Epoch 40)
