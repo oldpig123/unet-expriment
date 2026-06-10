@@ -800,14 +800,18 @@ The verification plot generated at the end of a run (defined by `save_verificati
 *   **Mendeley Lumbar Spine MRI (Completed — Final Model at Epoch 39)**: Val Dice: `0.9640` | Val IoU: `0.9312` | Val 3D-HD95: `0.35 mm`
     ![Lumbar MRI Final Model Verification Panel](./verification_plot_lumbar_mri.png)
 
-*   **VerSe '19 CT (Completed — Best Model at Epoch 6)**: Val Dice: `0.8845` | Val IoU: `0.8198` | Val 3D-HD95: `9.09 mm`
+*   **VerSe '19 CT (Extended Run 3 — Best Model at Epoch 45 / 66)**: Val Dice: `0.8877` | Val IoU: `0.8254` | Val 3D-HD95: `8.57 mm` (Epoch 45) / Val Dice: `0.8886` | Val IoU: `0.8267` | Val 3D-HD95: `11.36 mm` (Epoch 66)
     ![VerSe 19 Best Model Verification Panel](./verification_plot_verse19_best.png)
 
-*   **VerSe '19 CT (Completed — Final Model at Epoch 39)**: Val Dice: `0.8620` | Val IoU: `0.7910` | Val 3D-HD95: `14.03 mm`
-    ![VerSe 19 Final Model Verification Panel](./verification_plot_verse19.png)
+*   **VerSe '19 CT (Extended Run 3 — Active Model at Epoch 100)**: Val Dice: `0.8856` | Val IoU: `0.8222` | Val 3D-HD95: `14.45 mm`
+    ![VerSe 19 Active Model Verification Panel](./verification_plot_verse19.png)
 
-*   **VerSe '20 CT (Active Run 3 — Best Model at Epoch 15)**: Val Dice: `0.9167` | Val IoU: `0.8626` | Val 3D-HD95: `4.14 mm`
-    ![VerSe 20 Verification Panel](./verification_plot_verse20.png)
+*   **VerSe '20 CT (Extended Run 3 — Best Model at Epoch 15 / 40)**: Val Dice: `0.9167` | Val IoU: `0.8626` | Val 3D-HD95: `4.14 mm` (Epoch 15) / Val Dice: `0.9168` | Val IoU: `0.8625` | Val 3D-HD95: `5.91 mm` (Epoch 40)
+    ![VerSe 20 Best Model Verification Panel](./verification_plot_verse20_best.png)
+
+*   **VerSe '20 CT (Extended Run 3 — Completed Final Model at Epoch 64)**: Val Dice: `0.9087` | Val IoU: `0.8524` | Val 3D-HD95: `4.95 mm`
+    ![VerSe 20 Final Model Verification Panel](./verification_plot_verse20.png)
+
 
 ---
 

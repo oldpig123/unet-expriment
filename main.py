@@ -328,6 +328,7 @@ def main():
     parser.add_argument("--base_channels", type=int, default=32, help="Number of base channels for U-ResNet (default: 32)")
     parser.add_argument("--checkpoint_path", type=str, default=None, help="Path to save the best model weights checkpoint (e.g. best_model.pt)")
     parser.add_argument("--min_epochs", type=int, default=20, help="Minimum epochs before early stopping can trigger (default: 20)")
+    parser.add_argument("--patience", type=int, default=5, help="Patience for early stopping (default: 5)")
     args = parser.parse_args()
 
     device = verify_gpu()
@@ -415,7 +416,7 @@ def main():
         best_val_dice = -1.0
         best_val_hd = float('inf')
         epochs_no_improve = 0
-        patience = 5
+        patience = args.patience
         cosine_scheduler = None
         start_epoch = 1
         start_step = 0
